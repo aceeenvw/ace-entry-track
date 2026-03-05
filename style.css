@@ -1,0 +1,852 @@
+/* ⊹ ACE ENTRY TRACK ⊹ — style.css */
+
+/* ═══ Settings Panel ═══ */
+.ace-entry-track-settings .inline-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px;
+}
+
+/* ═══ Trigger Button ═══ */
+.env-trigger {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    line-height: 40px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 9990;
+    border-radius: 50%;
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    opacity: 0.5;
+    transition: opacity 0.2s, transform 0.2s;
+    user-select: none;
+}
+.env-trigger:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+.env-trigger:not([data-env-badge="0"])::after {
+    content: attr(data-env-badge);
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-size: 10px;
+    font-weight: 700;
+    color: white;
+    background: #ef4444;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 8px;
+    pointer-events: none;
+}
+
+
+/* ═══ Trigger Button: Dragging State (mobile) ═══ */
+.env-trigger--dragging {
+  transition: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+
+/* ═══ Tracker Panel (Fix #10: visibility-based animation) ═══ */
+.env-panel {
+    position: fixed;
+    bottom: 60px;
+    left: 12px;
+    width: 360px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 120px);
+    background: var(--SmartThemeBlurTintColor);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    z-index: 9989;
+    overflow-y: auto;
+
+    /* Fix #10: Use visibility + pointer-events instead of display:none
+       so transitions actually animate */
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s 0.2s;
+}
+.env-panel--active {
+    visibility: visible;
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s 0s;
+}
+
+/* Panel Header */
+.env-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 85%, var(--SmartThemeQuoteColor));
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px 12px 0 0;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.env-panel__title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--SmartThemeBodyColor);
+}
+.env-panel__stats {
+    font-size: 11px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.6;
+}
+.env-panel__empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.5;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* ═══ Token Budget Bar ═══ */
+.env-budget {
+    padding: 6px 14px 8px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 90%, transparent);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+.env-budget__label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.8;
+    margin-bottom: 4px;
+}
+.env-budget__alert {
+    color: #ef4444;
+    font-weight: 700;
+    font-size: 10px;
+    animation: env-budget-pulse 1.5s ease-in-out infinite;
+}
+@keyframes env-budget-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.env-budget__track {
+    width: 100%;
+    height: 4px;
+    background: color-mix(in srgb, var(--SmartThemeBorderColor) 50%, transparent);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.env-budget__fill {
+    height: 100%;
+    border-radius: 2px;
+    background: #10b981;
+    transition: width 0.3s ease;
+}
+.env-budget--warn .env-budget__fill {
+    background: #f59e0b;
+}
+.env-budget--over .env-budget__fill {
+    background: #ef4444;
+}
+.env-budget--over .env-budget__label {
+    color: #ef4444;
+    opacity: 1;
+}
+
+/* ═══ Search Bar (Feature #3) ═══ */
+.env-search {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 90%, transparent);
+}
+.env-search__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--SmartThemeBodyColor);
+    background: color-mix(in srgb, var(--SmartThemeChatTintColor) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 60%, transparent);
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.env-search__input::placeholder {
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.35;
+}
+.env-search__input:focus {
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+/* ═══ Trigger Type Filter Chips (Feature #1) ═══ */
+.env-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 90%, transparent);
+}
+.env-filter__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--chip-color, #64748b) 35%, transparent);
+    background: color-mix(in srgb, var(--chip-color, #64748b) 10%, transparent);
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.6;
+    transition: all 0.15s ease;
+    line-height: 1.3;
+}
+.env-filter__chip:hover {
+    opacity: 0.85;
+    border-color: color-mix(in srgb, var(--chip-color, #64748b) 60%, transparent);
+    background: color-mix(in srgb, var(--chip-color, #64748b) 18%, transparent);
+}
+.env-filter__chip--active {
+    opacity: 1;
+    border-color: var(--chip-color, #64748b);
+    background: color-mix(in srgb, var(--chip-color, #64748b) 25%, transparent);
+    color: var(--chip-color, #64748b);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip-color, #64748b) 15%, transparent);
+}
+.env-filter__chip-icon {
+    display: inline-flex;
+    align-items: center;
+}
+.env-filter__chip-icon svg {
+    width: 11px;
+    height: 11px;
+}
+.env-filter__chip-count {
+    font-size: 9px;
+    opacity: 0.7;
+}
+.env-filter__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 50%, transparent);
+    background: color-mix(in srgb, #ef4444 10%, transparent);
+    color: #ef4444;
+    opacity: 0.6;
+    transition: all 0.15s ease;
+    line-height: 1;
+    margin-left: 2px;
+}
+.env-filter__clear:hover {
+    opacity: 1;
+    background: color-mix(in srgb, #ef4444 20%, transparent);
+    border-color: #ef4444;
+}
+
+/* ═══ Sort Controls Bar ═══ */
+.env-sort {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px 6px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 90%, transparent);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+.env-sort__field {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor) 25%, transparent);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    line-height: 1.4;
+}
+.env-sort__field:hover {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 25%, transparent);
+    border-color: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeQuoteColor);
+}
+.env-sort__icon {
+    font-weight: 700;
+    opacity: 0.7;
+}
+.env-sort__dir {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor) 25%, transparent);
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    padding: 0;
+    line-height: 1;
+}
+.env-sort__dir:hover {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 25%, transparent);
+    border-color: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeQuoteColor);
+}
+
+/* ═══ World Group ═══ */
+.env-world__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 92%, var(--SmartThemeQuoteColor));
+    border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 50%, transparent);
+    border-left: 3px solid var(--SmartThemeQuoteColor);
+}
+.env-world__name {
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--SmartThemeQuoteColor);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.env-world__badge {
+    font-size: 10px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.5;
+}
+
+/* ═══ Entry — Base ═══ */
+.env-entry {
+    border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 25%, transparent);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.env-entry:hover {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 8%, transparent);
+}
+.env-entry:last-child {
+    border-bottom: none;
+}
+
+/* Main row */
+.env-entry__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px;
+}
+.env-entry__icon {
+    font-size: 13px;
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+}
+.env-entry__title {
+    flex: 1;
+    font-size: 12px;
+    color: var(--SmartThemeBodyColor);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.env-entry__tokens {
+    font-size: 10px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.45;
+    flex-shrink: 0;
+}
+.env-entry__chevron {
+    font-size: 10px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.3;
+    flex-shrink: 0;
+    width: 12px;
+    text-align: center;
+    transition: opacity 0.15s;
+}
+.env-entry:hover .env-entry__chevron {
+    opacity: 0.7;
+}
+.env-entry--open .env-entry__chevron {
+    opacity: 0.7;
+}
+
+/* ═══ Trigger-type coloring ═══ */
+.env-entry[data-trigger="constant"] .env-entry__title { color: #6366f1; }
+.env-entry[data-trigger="vector"] .env-entry__title { color: #8b5cf6; }
+.env-entry[data-trigger="sticky"] .env-entry__title { color: #ef4444; }
+.env-entry[data-trigger="forced"] .env-entry__title { color: #f59e0b; }
+.env-entry[data-trigger="normal"] .env-entry__title { color: #10b981; }
+.env-entry[data-trigger="persona"] .env-entry__title { color: #d946ef; }
+.env-entry[data-trigger="character"] .env-entry__title { color: #f59e0b; }
+.env-entry[data-trigger="scenario"] .env-entry__title { color: #84cc16; }
+
+/* ═══ Detail Section (Collapsible) ═══ */
+.env-detail {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.3s ease;
+    padding: 0 14px;
+    border-top: none;
+}
+.env-entry--open .env-detail {
+    max-height: 800px;
+    opacity: 1;
+    padding: 8px 14px 12px;
+    border-top: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 20%, transparent);
+}
+
+/* Detail rows */
+.env-detail__section {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 11px;
+}
+.env-detail__section--full {
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+}
+.env-detail__label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--SmartThemeQuoteColor);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    flex-shrink: 0;
+    min-width: 70px;
+}
+.env-detail__value {
+    font-size: 11px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.8;
+}
+.env-detail__badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    color: white;
+    padding: 1px 6px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+}
+.env-detail__desc {
+    font-size: 10px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.5;
+    font-style: italic;
+}
+
+/* Keys inside detail */
+.env-detail__keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.env-key {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 15%, var(--SmartThemeChatTintColor));
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor) 25%, transparent);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    word-break: break-all;
+}
+.env-key--secondary {
+    background: color-mix(in srgb, var(--SmartThemeEmColor) 15%, var(--SmartThemeChatTintColor));
+    border-color: color-mix(in srgb, var(--SmartThemeEmColor) 25%, transparent);
+}
+
+
+/* ═══ MATCHED Section Redesign (Option A: grouped-by-source) ═══ */
+
+.env-matched {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.env-matched__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+/* Source label chip — color-coded via --source-color CSS variable */
+.env-matched__source {
+    display: inline-flex;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--source-color, #64748b);
+    background: color-mix(in srgb, var(--source-color, #64748b) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--source-color, #64748b) 30%, transparent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+    min-width: 48px;
+    justify-content: center;
+    /* Tooltip visible on hover/hold */
+    cursor: help;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.env-matched__keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+/* Matched key chip — solid fill, color from source via --match-color */
+.env-key--matched {
+    background: color-mix(in srgb, var(--match-color, #10b981) 18%, var(--SmartThemeChatTintColor));
+    border-color: color-mix(in srgb, var(--match-color, #10b981) 50%, transparent);
+    color: var(--match-color, #10b981);
+    font-weight: 600;
+    /* Tooltip on hover/hold for category */
+    cursor: help;
+}
+
+/* Secondary matched key — outlined/dimmed variant */
+.env-key--matched-secondary {
+    background: color-mix(in srgb, var(--match-color, #10b981) 8%, var(--SmartThemeChatTintColor));
+    border-color: color-mix(in srgb, var(--match-color, #10b981) 30%, transparent);
+    color: color-mix(in srgb, var(--match-color, #10b981) 70%, var(--SmartThemeBodyColor));
+    font-weight: 400;
+    border-style: dashed;
+}
+
+
+.env-detail__match-reason {
+  font-size: 10px;
+  color: var(--SmartThemeBodyColor);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* Content preview */
+.env-detail__content {
+    font-size: 10px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.55;
+    background: color-mix(in srgb, var(--SmartThemeChatTintColor) 95%, var(--SmartThemeQuoteColor));
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 30%, transparent);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.env-detail__content::-webkit-scrollbar {
+    width: 4px;
+}
+.env-detail__content::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent);
+    border-radius: 2px;
+}
+
+/* ═══ Mobile ═══ */
+@media (max-width: 768px) {
+    .env-panel {
+        left: 8px;
+        right: 8px;
+        width: auto;
+        bottom: auto;
+        top: 80px;
+        max-height: calc(100vh - 160px);
+    }
+    .env-trigger {
+        bottom: auto;
+        top: 36px;
+        left: auto;
+        right: 8px;
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        line-height: 36px;
+        z-index: 99999 !important;
+        opacity: 0.7;
+    }
+    /* Touch-friendly filter chips */
+    .env-filter__chip {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    /* Touch-friendly search */
+    .env-search__input {
+        padding: 6px 10px;
+        font-size: 13px;
+    }
+}
+
+/* ═══ Lorebook Checkbox List (Settings) ═══ */
+.env-lorebook-list {
+    max-height: 160px;
+    overflow-y: auto;
+    background: var(--black30);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 4px;
+}
+.env-lorebook-list::-webkit-scrollbar {
+    width: 4px;
+}
+.env-lorebook-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent);
+    border-radius: 2px;
+}
+.env-lorebook-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+    font-size: 12px;
+    color: var(--SmartThemeBodyColor);
+}
+.env-lorebook-item:hover {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent);
+}
+.env-lorebook-item input[type="checkbox"] {
+    accent-color: var(--SmartThemeQuoteColor);
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.env-lorebook-item input[type="checkbox"]:checked + span {
+    color: var(--SmartThemeQuoteColor);
+    font-weight: 600;
+}
+.env-lorebook-empty {
+    padding: 12px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.4;
+}
+
+/* ═══ Diff: New Entry Indicator ═══ */
+.env-entry--new {
+    border-left: 3px solid #10b981 !important;
+    animation: env-flash-new 1.5s ease-out;
+}
+@keyframes env-flash-new {
+    0% { background: color-mix(in srgb, #10b981 20%, transparent); }
+    100% { background: transparent; }
+}
+.env-entry__diff-badge {
+    font-size: 8px;
+    font-weight: 700;
+    color: white;
+    background: #10b981;
+    padding: 1px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    line-height: 1.3;
+}
+.env-entry__diff-badge--removed {
+    background: #ef4444;
+}
+
+/* ═══ Diff: Removed Entry ═══ */
+.env-entry--removed {
+    opacity: 0.4;
+    cursor: default;
+    border-left: 3px solid #ef4444 !important;
+}
+.env-entry--removed .env-entry__title {
+    text-decoration: line-through;
+    color: var(--SmartThemeBodyColor) !important;
+}
+.env-entry--removed:hover {
+    background: transparent;
+    transform: none;
+}
+
+/* ═══ Diff: Removed Section ═══ */
+.env-removed-section {
+    border-top: 1px dashed color-mix(in srgb, #ef4444 40%, var(--SmartThemeBorderColor));
+    margin-top: 4px;
+}
+.env-removed-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #ef4444;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.7;
+}
+.env-removed-section__count {
+    font-size: 10px;
+    font-weight: 700;
+    color: #ef4444;
+    background: color-mix(in srgb, #ef4444 15%, transparent);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+/* ═══ Diff: Header Summary Chips ═══ */
+.env-diff-summary {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: 6px;
+}
+.env-diff-new {
+    font-size: 10px;
+    font-weight: 700;
+    color: #10b981;
+    background: color-mix(in srgb, #10b981 15%, transparent);
+    padding: 0px 4px;
+    border-radius: 3px;
+}
+.env-diff-removed {
+    font-size: 10px;
+    font-weight: 700;
+    color: #ef4444;
+    background: color-mix(in srgb, #ef4444 15%, transparent);
+    padding: 0px 4px;
+    border-radius: 3px;
+}
+
+/* ═══ Budget: Overflow Entries ═══ */
+.env-entry--overflow {
+    opacity: 0.4;
+    position: relative;
+}
+.env-entry--overflow::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 4px,
+        color-mix(in srgb, #ef4444 6%, transparent) 4px,
+        color-mix(in srgb, #ef4444 6%, transparent) 8px
+    );
+    pointer-events: none;
+    z-index: 1;
+    border-radius: 0;
+}
+.env-entry--overflow .env-entry__title {
+    color: var(--SmartThemeBodyColor) !important;
+}
+.env-entry__diff-badge--overflow {
+    background: color-mix(in srgb, #ef4444 20%, transparent) !important;
+    color: #ef4444 !important;
+}
+
+/* ── SVG icon sizing ── */
+
+.env-trigger svg {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+}
+
+.env-entry__icon svg {
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+}
+
+.env-sort__icon svg {
+    width: 13px;
+    height: 13px;
+    vertical-align: -2px;
+}
+
+.env-sort__dir svg {
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+}
+
+.env-entry__chevron svg {
+    width: 12px;
+    height: 12px;
+}
+
+.env-panel__title svg {
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+}
+
+.env-budget__alert svg {
+    width: 12px;
+    height: 12px;
+    vertical-align: -1px;
+}
+
+.env-panel__empty svg {
+    width: 16px;
+    height: 16px;
+    vertical-align: -3px;
+    opacity: 0.5;
+}
+
+/* Matched source label SVG (if icons are used in future) */
+.env-matched__source svg {
+    width: 10px;
+    height: 10px;
+}

@@ -36,7 +36,3 @@ Found under **Extensions** → **⊹ ACE ENTRY TRACK ⊹**:
 - **Enable/Disable** — toggle the tracker on or off
 - **Token budget override** — set a custom token budget (0 = use lorebook default)
 - **Monitored lorebooks** — check specific lorebooks to track, or leave empty to track all
-
-## License
-
-MIT

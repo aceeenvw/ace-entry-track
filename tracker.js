@@ -97,7 +97,7 @@ export function initTracker(getSettingsFn, saveFn) {
 
 // ── Event Handlers ──
 
-function onWorldInfoActivated(entryList) {
+async function onWorldInfoActivated(entryList) {
     if (!isEnabled()) return;
     if (!entryList || entryList.length === 0) {
         computeDiff([]);
@@ -115,7 +115,7 @@ function onWorldInfoActivated(entryList) {
         }
     }
 
-    const processed = entryList.map(entry => processEntry(entry));
+    const processed = await Promise.all(entryList.map(entry => processEntry(entry)));
     computeDiff(processed);
     state.currentEntries = processed;
     state.lastUpdate = Date.now();
@@ -505,10 +505,22 @@ function findMatchedKeys(entry) {
 
 // ── Entry Processing ──
 
-function processEntry(entry) {
+async function processEntry(entry) {
     const triggerType = classifyTrigger(entry);
     const charCount = entry.content?.length || 0;
-    const estimatedTokens = Math.round(charCount / 3.5);
+
+    // FIX: Use ST's real tokenizer instead of charCount/3.5 heuristic
+    let estimatedTokens;
+    try {
+        const { getTokenCountAsync } = SillyTavern.getContext();
+        if (typeof getTokenCountAsync === 'function') {
+            estimatedTokens = await getTokenCountAsync(entry.content || '');
+        } else {
+            estimatedTokens = Math.round(charCount / 3.5);
+        }
+    } catch {
+        estimatedTokens = Math.round(charCount / 3.5);
+    }
 
     const result = {
         uid: entry.uid,

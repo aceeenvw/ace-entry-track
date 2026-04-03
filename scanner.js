@@ -15,8 +15,6 @@ function isEnabled() {
 }
 
 const state = {
-    activeEntries: [],
-    totalTokens: 0,
     availableLorebooks: [],
 };
 
@@ -59,8 +57,6 @@ export function initScanner(getSettingsFn, saveFn) {
 
 function onChatChanged() {
     if (!isEnabled()) return;
-    state.activeEntries = [];
-    state.totalTokens = 0;
     discoverLorebooks().then(() => {
         pruneStaleMonitored();
         populateLorebookList();
@@ -196,10 +192,6 @@ export function addDiscoveredLorebook(name) {
         populateLorebookList();
         console.log(`[${MODULE_NAME}] Auto-discovered lorebook: ${name}`);
     }
-}
-
-export function getActiveEntries() {
-    return state.activeEntries;
 }
 
 export function getScannerState() {

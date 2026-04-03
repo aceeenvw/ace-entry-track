@@ -18,7 +18,7 @@
     font-size: 20px;
     line-height: 40px;
     text-align: center;
-    cursor: pointer;
+    cursor: grab;
     z-index: 9990;
     border-radius: 50%;
     background: var(--SmartThemeBlurTintColor);
@@ -48,12 +48,13 @@
 }
 
 
-/* ═══ Trigger Button: Dragging State (mobile) ═══ */
+/* ═══ Trigger Button: Dragging State (desktop + mobile) ═══ */
 .env-trigger--dragging {
   transition: none !important;
   opacity: 1 !important;
   transform: none !important;
   box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  cursor: grabbing !important;
 }
 
 /* ═══ Tracker Panel (Fix #10: visibility-based animation) ═══ */
@@ -69,8 +70,10 @@
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-    z-index: 9989;
+    z-index: 9991;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent) transparent;
 
     /* Fix #10: Use visibility + pointer-events instead of display:none
        so transitions actually animate */
@@ -583,6 +586,8 @@
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent) transparent;
 }
 .env-detail__content::-webkit-scrollbar {
     width: 4px;
@@ -634,6 +639,8 @@
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 6px;
     padding: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent) transparent;
 }
 .env-lorebook-list::-webkit-scrollbar {
     width: 4px;

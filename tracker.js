@@ -80,17 +80,18 @@ export function initTracker(getSettingsFn, saveFn) {
     _getSettings = getSettingsFn;
     _saveSettingsDebounced = saveFn;
 
-    if (!isEnabled()) {
-        console.log('[ACE ENTRY TRACK] Disabled via settings, tracker not initialized');
-        return;
-    }
-
+    // Always subscribe to events and create UI elements so setEnabled()
+    // can toggle visibility without needing to re-initialize.
     const { eventSource, event_types } = SillyTavern.getContext();
     eventSource.on(event_types.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
 
     createTriggerButton();
     createPanel();
+
+    if (!isEnabled()) {
+        console.log('[ACE ENTRY TRACK] Disabled via settings, tracker UI hidden');
+    }
 
     console.log(`[${MODULE_NAME}] Tracker initialized`);
 }
@@ -305,8 +306,8 @@ function parseRegexKey(input) {
     // Reject unescaped slash delimiters inside pattern
     if (pattern.match(/(^|[^\\])\//)) return null;
 
-    // Unescape slash delimiters
-    pattern = pattern.replace('\\/', '/');
+    // Unescape slash delimiters (all occurrences)
+    pattern = pattern.replaceAll('\\/', '/');
 
     try {
         return new RegExp(pattern, flags);
@@ -570,9 +571,17 @@ function classifyTrigger(entry) {
     if (entry.decorators?.includes?.('activate')) return 'forced';
     if (entry.decorators?.includes?.('dontactivate')) return 'suppressed';
     if (entry.sticky && entry.sticky !== 0) return 'sticky';
-    if (entry.matchPersonaDescription) return 'persona';
-    if (entry.matchCharacterDescription || entry.matchCharacterPersonality) return 'character';
-    if (entry.matchScenario) return 'scenario';
+
+    // Scan flags (matchPersonaDescription, matchCharacterDescription, etc.) tell ST
+    // *where* to look for keywords, not *why* the entry triggered. Only classify as
+    // persona/character/scenario if those are the *only* scan sources (no chat keys).
+    // If the entry also has regular keys, it's a normal key match that just scans
+    // additional sources.
+    const hasKeys = (entry.key?.length > 0) || (entry.keysecondary?.length > 0);
+    if (entry.matchPersonaDescription && !hasKeys) return 'persona';
+    if ((entry.matchCharacterDescription || entry.matchCharacterPersonality) && !hasKeys) return 'character';
+    if (entry.matchScenario && !hasKeys) return 'scenario';
+
     return 'normal';
 }
 
@@ -605,39 +614,44 @@ function applyFilters(entries) {
     return filtered;
 }
 
-// ── Mobile Drag ──
-function enableMobileDrag(btn) {
+// ── Drag (Desktop + Mobile) ──
+// Uses pointer events for unified desktop/mobile drag support.
+// Position resets to CSS defaults on each page refresh (no persistence).
+// On mobile: snaps to nearest horizontal edge after drag.
+// On desktop: stays where dropped (no edge snap).
+
+function enableDrag(btn) {
     const DRAG_THRESHOLD = 5;
-    const mql = window.matchMedia('(max-width: 768px)');
+    const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
 
     let offsetX, offsetY, startX, startY;
     let isDragging = false;
-    let bound = false;
 
-    function onTouchStart(e) {
-        const touch = e.touches[0];
+    function onPointerDown(e) {
+        // Only respond to primary button (left click / single touch)
+        if (e.button !== 0) return;
         const rect = btn.getBoundingClientRect();
-        offsetX = touch.clientX - rect.left;
-        offsetY = touch.clientY - rect.top;
-        startX = touch.clientX;
-        startY = touch.clientY;
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        startX = e.clientX;
+        startY = e.clientY;
         isDragging = false;
+        btn.setPointerCapture(e.pointerId);
         btn.classList.add('env-trigger--dragging');
     }
 
-    function onTouchMove(e) {
-        const touch = e.touches[0];
-        const dx = touch.clientX - startX;
-        const dy = touch.clientY - startY;
+    function onPointerMove(e) {
+        if (!btn.hasPointerCapture(e.pointerId)) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
 
         if (!isDragging && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
         isDragging = true;
-        e.preventDefault();
 
         const bw = btn.offsetWidth;
         const bh = btn.offsetHeight;
-        let newX = Math.max(0, Math.min(touch.clientX - offsetX, window.innerWidth - bw));
-        let newY = Math.max(0, Math.min(touch.clientY - offsetY, window.innerHeight - bh));
+        const newX = Math.max(0, Math.min(e.clientX - offsetX, window.innerWidth - bw));
+        const newY = Math.max(0, Math.min(e.clientY - offsetY, window.innerHeight - bh));
 
         btn.style.left = newX + 'px';
         btn.style.top = newY + 'px';
@@ -645,49 +659,107 @@ function enableMobileDrag(btn) {
         btn.style.bottom = 'auto';
     }
 
-    function onTouchEnd() {
+    function onPointerUp(e) {
         btn.classList.remove('env-trigger--dragging');
+        if (!btn.hasPointerCapture(e.pointerId)) return;
+        btn.releasePointerCapture(e.pointerId);
+
         if (isDragging) {
             btn._justDragged = true;
+            // Safety timeout: clear the flag in case click never fires
+            setTimeout(() => { btn._justDragged = false; }, 300);
 
-            // Snap to nearest horizontal edge
-            const rect = btn.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            if (centerX > window.innerWidth / 2) {
-                btn.style.left = 'auto';
-                btn.style.right = '8px';
-            } else {
-                btn.style.right = 'auto';
-                btn.style.left = '8px';
+            // Mobile: snap to nearest horizontal edge
+            if (isMobile()) {
+                const rect = btn.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                if (centerX > window.innerWidth / 2) {
+                    btn.style.left = 'auto';
+                    btn.style.right = '8px';
+                } else {
+                    btn.style.right = 'auto';
+                    btn.style.left = '8px';
+                }
             }
         }
     }
 
-    function attach() {
-        if (bound) return;
-        btn.addEventListener('touchstart', onTouchStart, { passive: true });
-        btn.addEventListener('touchmove', onTouchMove, { passive: false });
-        btn.addEventListener('touchend', onTouchEnd);
-        bound = true;
-    }
+    btn.addEventListener('pointerdown', onPointerDown);
+    btn.addEventListener('pointermove', onPointerMove);
+    btn.addEventListener('pointerup', onPointerUp);
+    btn.addEventListener('pointercancel', onPointerUp);
 
-    function detach() {
-        if (!bound) return;
-        btn.removeEventListener('touchstart', onTouchStart);
-        btn.removeEventListener('touchmove', onTouchMove);
-        btn.removeEventListener('touchend', onTouchEnd);
-        btn.style.left = '';
-        btn.style.top = '';
-        btn.style.right = '';
-        btn.style.bottom = '';
-        bound = false;
-    }
-
-    if (mql.matches) attach();
-    mql.addEventListener('change', (e) => e.matches ? attach() : detach());
+    // Prevent native touch scrolling while dragging the button
+    btn.style.touchAction = 'none';
 }
 
 // ── UI: Trigger Button ──
+
+function togglePanel() {
+    state.panelOpen = !state.panelOpen;
+    const panel = document.getElementById('env_tracker_panel');
+    if (panel) {
+        panel.classList.toggle('env-panel--active', state.panelOpen);
+        if (state.panelOpen) positionPanelNearButton();
+    }
+}
+
+/**
+ * Position the panel near the trigger button so it follows after drag.
+ * On mobile, the panel uses full-width CSS so we only adjust the vertical offset.
+ * On desktop, the panel anchors to the button's corner.
+ */
+function positionPanelNearButton() {
+    const btn = document.getElementById('env_trigger_btn');
+    const panel = document.getElementById('env_tracker_panel');
+    if (!btn || !panel) return;
+
+    const rect = btn.getBoundingClientRect();
+    const panelWidth = 360;
+    const margin = 8;
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+    if (isMobile) {
+        // Mobile: panel is full-width, just position below or above the button
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const panelMaxH = window.innerHeight - 80;
+
+        if (spaceBelow > panelMaxH * 0.4) {
+            // Below button
+            panel.style.top = (rect.bottom + margin) + 'px';
+            panel.style.bottom = 'auto';
+        } else {
+            // Above button
+            panel.style.top = 'auto';
+            panel.style.bottom = (window.innerHeight - rect.top + margin) + 'px';
+        }
+        // Reset desktop-specific positioning
+        panel.style.left = '';
+        panel.style.right = '';
+    } else {
+        // Desktop: anchor panel corner near button
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceRight = window.innerWidth - rect.left;
+
+        // Vertical: prefer above the button (like the original layout)
+        if (rect.top > spaceBelow && rect.top > 200) {
+            panel.style.bottom = (window.innerHeight - rect.top + margin) + 'px';
+            panel.style.top = 'auto';
+        } else {
+            panel.style.top = (rect.bottom + margin) + 'px';
+            panel.style.bottom = 'auto';
+        }
+
+        // Horizontal: prefer aligning left edge with button
+        if (spaceRight >= panelWidth + margin) {
+            panel.style.left = Math.max(margin, rect.left) + 'px';
+            panel.style.right = 'auto';
+        } else {
+            panel.style.right = margin + 'px';
+            panel.style.left = 'auto';
+        }
+    }
+}
 
 function createTriggerButton() {
     if (document.getElementById('env_trigger_btn')) return;
@@ -698,19 +770,26 @@ function createTriggerButton() {
     btn.title = '⊹ ACE ENTRY TRACK ⊹';
     btn.innerHTML = ICONS.tracker;
     btn.setAttribute('data-env-badge', '0');
+    // Accessibility
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
 
     btn.addEventListener('click', (e) => {
         if (btn._justDragged) { btn._justDragged = false; return; }
         e.stopPropagation();
-        state.panelOpen = !state.panelOpen;
-        const panel = document.getElementById('env_tracker_panel');
-        if (panel) {
-            panel.classList.toggle('env-panel--active', state.panelOpen);
+        togglePanel();
+    });
+
+    // Keyboard support: Enter / Space to toggle panel
+    btn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            togglePanel();
         }
     });
 
     document.body.appendChild(btn);
-    enableMobileDrag(btn);
+    enableDrag(btn);
 }
 
 function updateBadge() {
@@ -792,6 +871,14 @@ function createPanel() {
             // Debounce the re-render for smooth typing
             clearTimeout(panel._searchTimeout);
             panel._searchTimeout = setTimeout(() => renderPanel(), 150);
+        }
+    });
+
+    // Close panel on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && state.panelOpen) {
+            state.panelOpen = false;
+            panel.classList.remove('env-panel--active');
         }
     });
 
@@ -909,7 +996,7 @@ function renderPanel() {
     // Trigger type filter chips
     const hasActiveFilters = state.triggerFilter.size > 0 || state.searchQuery;
     const presentTypes = Object.keys(triggerCounts).sort();
-    if (presentTypes.length > 1) {
+    if (presentTypes.length > 0) {
         html += `<div class="env-filter">`;
         for (const type of presentTypes) {
             const tt = TRIGGER_TYPES[type] || TRIGGER_TYPES.normal;
@@ -979,10 +1066,13 @@ function renderPanel() {
         html += `<div class="env-panel__empty">No entries match current filters.<br><small>${totalAll} entries hidden by filter.</small></div>`;
     }
 
+    // Check if search input was focused before re-render
+    const searchWasFocused = panel.querySelector('.env-search__input') === document.activeElement;
+
     panel.innerHTML = html;
 
-    // Re-focus search input if it was active
-    if (state.searchQuery) {
+    // Re-focus search input if it was active before re-render
+    if (searchWasFocused) {
         const input = panel.querySelector('.env-search__input');
         if (input) {
             input.focus();
@@ -1042,7 +1132,7 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
     if (entry.sticky) {
         html += `<div class="env-detail__section">`;
         html += `<span class="env-detail__label">Sticky</span>`;
-        html += `<span class="env-detail__value">${entry.sticky} turns remaining</span>`;
+        html += `<span class="env-detail__value">${entry.sticky} turn duration</span>`;
         html += `</div>`;
     }
 
@@ -1195,7 +1285,7 @@ function renderRemovedEntry(entry) {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ── Exports ──

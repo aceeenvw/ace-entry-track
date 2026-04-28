@@ -18,17 +18,34 @@ const defaultSettings = Object.freeze({
     sortOrder: 'asc',
 });
 
+// Allowlist hydration: copy only known keys from defaults, coerce types,
+// ignore any __proto__/constructor/prototype mischief in persisted JSON.
+// Replaces lodash.merge which is vulnerable to prototype pollution.
 function getSettings() {
     const { extensionSettings } = SillyTavern.getContext();
-    const lodash = SillyTavern.libs.lodash;
-    extensionSettings[MODULE_NAME] = lodash.merge(
-        structuredClone(defaultSettings),
-        extensionSettings[MODULE_NAME],
-    );
-    if (extensionSettings[MODULE_NAME].enabled === undefined) {
-        extensionSettings[MODULE_NAME].enabled = true;
+    const raw = (extensionSettings[MODULE_NAME] && typeof extensionSettings[MODULE_NAME] === 'object')
+        ? extensionSettings[MODULE_NAME] : {};
+    const base = structuredClone(defaultSettings);
+
+    for (const key of Object.keys(defaultSettings)) {
+        if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+        const incoming = raw[key];
+        const defaultVal = defaultSettings[key];
+
+        // Type-matched coercion; silently drop mismatched values.
+        if (typeof defaultVal === 'boolean') {
+            if (typeof incoming === 'boolean') base[key] = incoming;
+        } else if (typeof defaultVal === 'number') {
+            if (typeof incoming === 'number' && Number.isFinite(incoming)) base[key] = incoming;
+        } else if (typeof defaultVal === 'string') {
+            if (typeof incoming === 'string') base[key] = incoming;
+        } else if (Array.isArray(defaultVal)) {
+            if (Array.isArray(incoming)) base[key] = incoming.filter(v => typeof v === 'string');
+        }
     }
-    return extensionSettings[MODULE_NAME];
+
+    extensionSettings[MODULE_NAME] = base;
+    return base;
 }
 
 function saveSettings() {

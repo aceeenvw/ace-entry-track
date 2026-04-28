@@ -506,50 +506,70 @@ function findMatchedKeys(entry) {
 
 // ── Entry Processing ──
 
+// Coerce a value to a finite number or return the provided default.
+// A malicious/shared lorebook can contain anything (strings, objects, NaN);
+// this prevents those from reaching HTML templates and sort comparators.
+function _toNum(v, def = 0) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : def;
+}
+// Coerce to string and clamp length (for fields that end up in HTML).
+function _toStr(v, def = '', maxLen = 1000) {
+    if (v == null) return def;
+    const s = String(v);
+    return s.length > maxLen ? s.slice(0, maxLen) : s;
+}
+// Coerce to array of strings (filter out non-strings silently).
+function _toStrArr(v) {
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+}
+
 async function processEntry(entry) {
     const triggerType = classifyTrigger(entry);
-    const charCount = entry.content?.length || 0;
+    const contentStr = _toStr(entry.content, '', 100000);
+    const charCount = contentStr.length;
 
     // FIX: Use ST's real tokenizer instead of charCount/3.5 heuristic
     let estimatedTokens;
     try {
         const { getTokenCountAsync } = SillyTavern.getContext();
         if (typeof getTokenCountAsync === 'function') {
-            estimatedTokens = await getTokenCountAsync(entry.content || '');
+            estimatedTokens = await getTokenCountAsync(contentStr);
         } else {
             estimatedTokens = Math.round(charCount / 3.5);
         }
     } catch {
         estimatedTokens = Math.round(charCount / 3.5);
     }
+    estimatedTokens = _toNum(estimatedTokens, 0);
 
     const result = {
-        uid: entry.uid,
-        world: entry.world || 'Unknown',
-        title: entry.comment || entry.key?.[0] || 'Untitled',
+        uid: _toNum(entry.uid, 0),
+        world: _toStr(entry.world, 'Unknown', 200),
+        title: _toStr(entry.comment || entry.key?.[0], 'Untitled', 200),
         triggerType,
-        position: entry.position,
-        depth: entry.depth,
-        order: entry.order,
+        position: _toNum(entry.position, 0),
+        depth: _toNum(entry.depth, 0),
+        order: _toNum(entry.order, 0),
         charCount,
         estimatedTokens,
-        sticky: entry.sticky || 0,
+        sticky: _toNum(entry.sticky, 0),
         constant: !!entry.constant,
-        keys: entry.key || [],
-        secondaryKeys: entry.keysecondary || [],
-        selectiveLogic: entry.selectiveLogic,
-        content: entry.content || '',
-        probability: entry.probability,
-        group: entry.group,
-        groupWeight: entry.groupWeight,
+        keys: _toStrArr(entry.key),
+        secondaryKeys: _toStrArr(entry.keysecondary),
+        selectiveLogic: _toNum(entry.selectiveLogic, 0),
+        content: contentStr,
+        probability: _toNum(entry.probability, 100),
+        group: _toStr(entry.group, '', 200),
+        groupWeight: _toNum(entry.groupWeight, 0),
         // FIX: Preserve null for caseSensitive/matchWholeWords so findMatchedKeys
         // can fall back to global WI settings (mirroring ST's ?? operator behavior)
-        caseSensitive: entry.caseSensitive ?? null,
+        caseSensitive: typeof entry.caseSensitive === 'boolean' ? entry.caseSensitive : null,
         disable: !!entry.disable,
-        scanDepth: entry.scanDepth,
-        matchWholeWords: entry.matchWholeWords ?? null,
+        scanDepth: entry.scanDepth == null ? null : _toNum(entry.scanDepth, 0),
+        matchWholeWords: typeof entry.matchWholeWords === 'boolean' ? entry.matchWholeWords : null,
         useGroupScoring: !!entry.useGroupScoring,
-        automationId: entry.automationId,
+        automationId: _toStr(entry.automationId, '', 100),
         vectorized: !!entry.vectorized,
         preventRecursion: !!entry.preventRecursion,
         excludeRecursion: !!entry.excludeRecursion,
@@ -1088,7 +1108,7 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
     const diffClass = diffStatus === 'new' ? ' env-entry--new' : '';
     const overflowClass = isOverflow ? ' env-entry--overflow' : '';
 
-    let html = `<div class="env-entry${openClass}${diffClass}${overflowClass}" data-trigger="${entry.triggerType}" data-uid="${entry.uid}">`;
+    let html = `<div class="env-entry${openClass}${diffClass}${overflowClass}" data-trigger="${escapeHtml(String(entry.triggerType))}" data-uid="${escapeHtml(String(entry.uid))}">`;
 
     // Fix #6: Chevron down = collapsed (click to expand), chevron up = expanded (click to collapse)
     html += `<div class="env-entry__row">`;
@@ -1100,7 +1120,7 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
     }
     html += `<span class="env-entry__icon">${tt.icon}</span>`;
     html += `<span class="env-entry__title">${escapeHtml(entry.title)}</span>`;
-    html += `<span class="env-entry__tokens">${entry.estimatedTokens}t</span>`;
+    html += `<span class="env-entry__tokens">${escapeHtml(String(entry.estimatedTokens))}t</span>`;
     html += `<span class="env-entry__chevron">${isOpen ? ICONS.chevron_up : ICONS.chevron_down}</span>`;
     html += `</div>`;
 
@@ -1108,38 +1128,38 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
     html += `<div class="env-detail">`;
 
     html += `<div class="env-detail__section">`;
-    html += `<span class="env-detail__badge" style="background:${tt.color}">${tt.label}</span> `;
-    html += `<span class="env-detail__desc">${tt.desc}</span>`;
+    html += `<span class="env-detail__badge" style="background:${escapeHtml(String(tt.color))}">${escapeHtml(String(tt.label))}</span> `;
+    html += `<span class="env-detail__desc">${escapeHtml(String(tt.desc))}</span>`;
     html += `</div>`;
 
     html += `<div class="env-detail__section">`;
     html += `<span class="env-detail__label">Position</span>`;
-    html += `<span class="env-detail__value">${posLabel}`;
-    if (entry.position === 4 && entry.depth !== undefined) html += ` (depth: ${entry.depth})`;
+    html += `<span class="env-detail__value">${escapeHtml(String(posLabel))}`;
+    if (entry.position === 4 && entry.depth !== undefined) html += ` (depth: ${escapeHtml(String(entry.depth))})`;
     html += `</span>`;
     html += `</div>`;
 
     html += `<div class="env-detail__section">`;
     html += `<span class="env-detail__label">Order</span>`;
-    html += `<span class="env-detail__value">${entry.order ?? '—'}</span>`;
+    html += `<span class="env-detail__value">${escapeHtml(String(entry.order ?? '—'))}</span>`;
     html += `</div>`;
 
     html += `<div class="env-detail__section">`;
     html += `<span class="env-detail__label">Size</span>`;
-    html += `<span class="env-detail__value">${entry.charCount} chars · ~${entry.estimatedTokens} tokens</span>`;
+    html += `<span class="env-detail__value">${escapeHtml(String(entry.charCount))} chars · ~${escapeHtml(String(entry.estimatedTokens))} tokens</span>`;
     html += `</div>`;
 
     if (entry.sticky) {
         html += `<div class="env-detail__section">`;
         html += `<span class="env-detail__label">Sticky</span>`;
-        html += `<span class="env-detail__value">${entry.sticky} turn duration</span>`;
+        html += `<span class="env-detail__value">${escapeHtml(String(entry.sticky))} turn duration</span>`;
         html += `</div>`;
     }
 
     if (entry.probability !== undefined && entry.probability < 100) {
         html += `<div class="env-detail__section">`;
         html += `<span class="env-detail__label">Probability</span>`;
-        html += `<span class="env-detail__value">${entry.probability}%</span>`;
+        html += `<span class="env-detail__value">${escapeHtml(String(entry.probability))}%</span>`;
         html += `</div>`;
     }
 
@@ -1147,14 +1167,14 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
         html += `<div class="env-detail__section">`;
         html += `<span class="env-detail__label">Group</span>`;
         html += `<span class="env-detail__value">${escapeHtml(entry.group)}`;
-        if (entry.groupWeight) html += ` (weight: ${entry.groupWeight})`;
+        if (entry.groupWeight) html += ` (weight: ${escapeHtml(String(entry.groupWeight))})`;
         html += `</span></div>`;
     }
 
     if (entry.selectiveLogic !== undefined) {
         html += `<div class="env-detail__section">`;
         html += `<span class="env-detail__label">Logic</span>`;
-        html += `<span class="env-detail__value">${LOGIC_NAMES[entry.selectiveLogic] || entry.selectiveLogic}</span>`;
+        html += `<span class="env-detail__value">${escapeHtml(String(LOGIC_NAMES[entry.selectiveLogic] ?? entry.selectiveLogic))}</span>`;
         html += `</div>`;
     }
 
@@ -1271,12 +1291,12 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
 function renderRemovedEntry(entry) {
     const tt = TRIGGER_TYPES[entry.triggerType] || TRIGGER_TYPES.normal;
 
-    let html = `<div class="env-entry env-entry--removed" data-trigger="${entry.triggerType}" data-uid="${entry.uid}">`;
+    let html = `<div class="env-entry env-entry--removed" data-trigger="${escapeHtml(String(entry.triggerType))}" data-uid="${escapeHtml(String(entry.uid))}">`;
     html += `<div class="env-entry__row">`;
     html += `<span class="env-entry__diff-badge env-entry__diff-badge--removed">OUT</span>`;
     html += `<span class="env-entry__icon">${tt.icon}</span>`;
     html += `<span class="env-entry__title">${escapeHtml(entry.title)}</span>`;
-    html += `<span class="env-entry__tokens">${entry.estimatedTokens}t</span>`;
+    html += `<span class="env-entry__tokens">${escapeHtml(String(entry.estimatedTokens))}t</span>`;
     html += `</div>`;
     html += `</div>`;
 

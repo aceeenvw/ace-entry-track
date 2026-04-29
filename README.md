@@ -282,4 +282,17 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 
 ---
 
-<sub>Author: **aceenvw** · Built for SillyTavern · MIT License</sub>
+## License
+
+ACE Entry Track is licensed under the **GNU Affero General Public License v3.0
+(AGPL-3.0)**. See the [`LICENSE`](./LICENSE) file for the full text.
+
+Because this is an AGPL-licensed extension, if you run a modified version as
+part of a network-accessible service, you must make the corresponding source
+code of your modified version available to its users.
+
+Copyright (C) 2026 aceenvw
+
+---
+
+<sub>Author: **aceenvw** · Built for SillyTavern · Licensed under AGPL-3.0</sub>

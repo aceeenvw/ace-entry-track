@@ -1,13 +1,16 @@
 // ⊹ ACE ENTRY TRACK ⊹ — index.js
-// Main entry point: settings init, UI, lifecycle orchestration
+// Bootstrap: settings hydration, UI mount, module wiring.
+// Settings load uses an allowlist loop (not lodash.merge) so __proto__ /
+// constructor / prototype keys in the persisted JSON cannot poison.
 
 import { initScanner, getScannerState } from './scanner.js';
 import { initTracker, setEnabled as setTrackerEnabled } from './tracker.js';
+import { initLorebookList, populateLorebookList } from './ui/lorebook-list.js';
+import { log } from './utils/log.js';
 
 const MODULE_NAME = 'ace-entry-track';
 
-// Derive EXT_PATH from the actual script location so it works
-// regardless of what the install folder is named.
+// Derived from script location so the install folder can be renamed.
 const EXT_PATH = new URL('.', import.meta.url).pathname.replace(/^\//, '').replace(/\/$/, '');
 
 const defaultSettings = Object.freeze({
@@ -18,10 +21,13 @@ const defaultSettings = Object.freeze({
     sortOrder: 'asc',
 });
 
-// Allowlist hydration: copy only known keys from defaults, coerce types,
-// ignore any __proto__/constructor/prototype mischief in persisted JSON.
-// Replaces lodash.merge which is vulnerable to prototype pollution.
-function getSettings() {
+/**
+ * Allowlist-only hydration: only defaultSettings keys are considered, so
+ * __proto__ / constructor / prototype in `raw` are never copied. The
+ * result replaces extensionSettings[MODULE_NAME] so future debounced
+ * saves serialize the sanitized shape.
+ */
+function hydrateSettings() {
     const { extensionSettings } = SillyTavern.getContext();
     const raw = (extensionSettings[MODULE_NAME] && typeof extensionSettings[MODULE_NAME] === 'object')
         ? extensionSettings[MODULE_NAME] : {};
@@ -32,7 +38,6 @@ function getSettings() {
         const incoming = raw[key];
         const defaultVal = defaultSettings[key];
 
-        // Type-matched coercion; silently drop mismatched values.
         if (typeof defaultVal === 'boolean') {
             if (typeof incoming === 'boolean') base[key] = incoming;
         } else if (typeof defaultVal === 'number') {
@@ -48,41 +53,28 @@ function getSettings() {
     return base;
 }
 
+/**
+ * Return the live (mutable) settings reference. Re-hydrates if ST swapped
+ * in a new object (profile import, fresh load); otherwise returns the
+ * same reference so consumer mutations persist until the next save flush.
+ */
+function getSettings() {
+    const { extensionSettings } = SillyTavern.getContext();
+    const existing = extensionSettings[MODULE_NAME];
+    if (existing && typeof existing === 'object' && existing.__ace_hydrated === true) {
+        return existing;
+    }
+    const base = hydrateSettings();
+    // Non-enumerable so the marker doesn't leak into serialized JSON.
+    Object.defineProperty(base, '__ace_hydrated', {
+        value: true, enumerable: false, configurable: true, writable: true,
+    });
+    return base;
+}
+
 function saveSettings() {
     const { saveSettingsDebounced } = SillyTavern.getContext();
     saveSettingsDebounced();
-}
-
-// ── Lorebook Checkbox List ──
-
-export function populateLorebookList() {
-    const container = $('#env_monitored_lorebooks');
-    if (!container.length) return;
-
-    const settings = getSettings();
-    const monitored = settings.monitoredLorebooks || [];
-    const available = getScannerState().availableLorebooks || [];
-
-    container.empty();
-
-    if (available.length === 0) {
-        container.html('<div class="env-lorebook-empty">No lorebooks discovered yet</div>');
-        return;
-    }
-
-    for (const name of available) {
-        const isChecked = monitored.includes(name);
-        const safeId = `env_lb_${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
-        // Fix #8: Build DOM nodes via jQuery to avoid XSS from lorebook names.
-        // Using .text() and .val() ensures proper escaping without double-encoding.
-        const label = $('<label>', { class: 'env-lorebook-item', for: safeId });
-        const input = $('<input>', { type: 'checkbox', id: safeId }).val(name);
-        if (isChecked) input.prop('checked', true);
-        const span = $('<span>').text(name);
-        label.append(input, span);
-        container.append(label);
-    }
 }
 
 // ── Settings UI ──
@@ -102,11 +94,14 @@ function bindSettingsEvents() {
         setTrackerEnabled(s.enabled);
     });
     $('#env_token_budget').on('input', function () {
-        getSettings().tokenBudgetOverride = parseInt($(this).val()) || 0;
+        const v = parseInt($(this).val(), 10);
+        // Clamp to [0, 999999]; non-finite or negative means "no override".
+        const clamped = Number.isFinite(v) ? Math.max(0, Math.min(v, 999999)) : 0;
+        getSettings().tokenBudgetOverride = clamped;
         saveSettings();
     });
-    // Lorebook checkboxes — event delegation
-    // Fix #8: Read the raw name from data attribute to avoid HTML-entity issues
+    // .val() returns the raw lorebook name set via jQuery .val(name) in
+    // lorebook-list.js — safe from XSS even when names contain HTML.
     $('#env_monitored_lorebooks').on('change', 'input[type="checkbox"]', function () {
         const settings = getSettings();
         const checked = [];
@@ -115,24 +110,28 @@ function bindSettingsEvents() {
         });
         settings.monitoredLorebooks = checked;
         saveSettings();
-        console.log(`[${MODULE_NAME}] Monitored lorebooks:`, checked);
+        log.info('Monitored lorebooks:', checked);
     });
 }
 
 // ── Bootstrap ──
 
 jQuery(async () => {
-    console.log(`[${MODULE_NAME}] Loading...`);
+    log.info('Loading...');
 
     try {
         const settingsHtml = await $.get(`${EXT_PATH}/settings.html`);
         $('#extensions_settings2').append(settingsHtml);
     } catch (err) {
-        console.error(`[${MODULE_NAME}] Failed to load settings HTML:`, err);
+        log.error('Failed to load settings HTML:', err);
         return;
     }
 
     const settings = getSettings();
+
+    // Inject getters to avoid circular import on scanner.js.
+    initLorebookList(getSettings, () => getScannerState().availableLorebooks || []);
+
     loadSettingsUI();
     bindSettingsEvents();
 
@@ -140,5 +139,5 @@ jQuery(async () => {
     initTracker(getSettings, saveSettings);
     setTrackerEnabled(settings.enabled);
 
-    console.log(`[${MODULE_NAME}] Loaded successfully`);
+    log.info('Loaded successfully');
 });

@@ -2,11 +2,10 @@
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
             <b>⊹ ACE ENTRY TRACK ⊹</b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down up"></div>
         </div>
-        <div class="inline-drawer-content">
+        <div class="inline-drawer-content" style="display: none;">
 
-            <!-- Enable toggle -->
             <div class="flex-container">
                 <input id="env_enabled" type="checkbox" />
                 <label for="env_enabled">Enable ⊹ ACE ENTRY TRACK ⊹</label>
@@ -14,14 +13,12 @@
 
             <hr />
 
-            <!-- Token budget override -->
             <div>
                 <label>Token budget override</label>
                 <input id="env_token_budget" type="number" min="0" class="text_pole" />
                 <small class="text_muted">0 = use lorebook's own budget</small>
             </div>
 
-            <!-- Monitored lorebooks — CHECKBOX LIST -->
             <div>
                 <label>Monitored lorebooks</label>
                 <div id="env_monitored_lorebooks" class="env-lorebook-list"></div>

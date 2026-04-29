@@ -6,7 +6,7 @@
 ![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-9333ea)
 ![Version](https://img.shields.io/badge/version-2.0.1-3b82f6)
 ![Author](https://img.shields.io/badge/author-aceenvw-1f2937)
-![License](https://img.shields.io/badge/license-MIT-10b981)
+![License](https://img.shields.io/badge/license-AGPL--3.0-10b981)
 
 ---
 

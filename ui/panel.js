@@ -21,6 +21,21 @@ let _reEvaluateFn; // injected from tracker.js to avoid circular import
 const _escHandler = (e) => {
     if (e.key === 'Escape' && state.panelOpen) closePanel();
 };
+
+// Tap-away dismissal for the highlight tooltip. On touch devices the
+// mouseout event that would normally hide the tooltip never fires — the
+// synthesized mouseover on the tap persists until another element gets
+// hovered, which on mobile essentially never happens. This listener
+// hides the tooltip when the user taps anywhere that isn't a highlight
+// mark. The tooltip itself has `pointer-events: none` so taps land on
+// whatever sits underneath it.
+const _tapAwayHandler = (e) => {
+    const tip = document.getElementById('env_tooltip');
+    if (!tip || tip.style.display === 'none') return;
+    if (e.target.closest('.env-highlight')) return;
+    hideTooltip();
+    if (_hoveredMark) { clearAccentedEntries(); _hoveredMark = null; }
+};
 let _escAttached = false;
 
 // Hover bookkeeping lifted to module scope so renderPanel() can null
@@ -41,6 +56,10 @@ export function initPanel(getSettingsFn, saveFn, reEvaluateFn) {
 export function attachPanelGlobals() {
     if (_escAttached) return;
     document.addEventListener('keydown', _escHandler);
+    // pointerdown fires before click and works uniformly across mouse,
+    // touch and pen. Capture phase so we see it even if downstream
+    // handlers stopPropagation().
+    document.addEventListener('pointerdown', _tapAwayHandler, true);
     _escAttached = true;
 }
 
@@ -48,6 +67,7 @@ export function attachPanelGlobals() {
 export function detachPanelGlobals() {
     if (!_escAttached) return;
     document.removeEventListener('keydown', _escHandler);
+    document.removeEventListener('pointerdown', _tapAwayHandler, true);
     _escAttached = false;
 }
 
@@ -638,8 +658,12 @@ export function renderPanel() {
         html += `</div>`;
         panel.innerHTML = html;
         // Drop hover refs — the elements they pointed to were just detached.
+        // Also hide the tooltip: if a highlight-tap triggered this render,
+        // the mark it pointed at is now gone but the tooltip would linger
+        // (no mouseout fires on touch).
         _hoveredEntry = null;
         _hoveredMark = null;
+        hideTooltip();
         if (state.panelOpen) applyWIHighlights([]);
         return;
     }
@@ -770,8 +794,12 @@ export function renderPanel() {
 
     panel.innerHTML = html;
     // Drop hover refs — the elements they pointed to were just detached.
+    // Also hide the tooltip: if a highlight-tap triggered this render,
+    // the mark it pointed at is now gone but the tooltip would linger
+    // (no mouseout fires on touch).
     _hoveredEntry = null;
     _hoveredMark = null;
+    hideTooltip();
 
     const newBody = panel.querySelector('.env-panel__body');
     if (newBody) newBody.scrollTop = scrollPos;

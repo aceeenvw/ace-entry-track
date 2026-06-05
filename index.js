@@ -121,7 +121,7 @@ jQuery(async () => {
 
     try {
         const settingsHtml = await $.get(`${EXT_PATH}/settings.html`);
-        $('#extensions_settings2').append(settingsHtml);
+        $('#extensions_settings').append(settingsHtml);
     } catch (err) {
         log.error('Failed to load settings HTML:', err);
         return;

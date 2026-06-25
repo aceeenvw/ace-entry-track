@@ -1,0 +1,47 @@
+<div class="ace-entry-track-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>⊹ ACE ENTRY TRACK ⊹</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down up"></div>
+        </div>
+        <div class="inline-drawer-content" style="display: none;">
+
+            <div class="env_settings_card">
+                <p class="env_settings_intro">Track which lorebook entries fire during chat — budgets, sources and activations in one panel.</p>
+
+                <div class="env_settings_section">
+                    <h4 class="env_settings_heading">Behavior</h4>
+
+                    <label class="env_set_row env_set_toggle" for="env_enabled">
+                        <span class="env_set_text">
+                            <span class="env_set_label">Enable Ace Entry Track</span>
+                            <span class="env_set_desc">Monitor and report lorebook entry activations during chat.</span>
+                        </span>
+                        <input id="env_enabled" type="checkbox" />
+                    </label>
+                </div>
+
+                <div class="env_settings_section">
+                    <h4 class="env_settings_heading">Tracking</h4>
+
+                    <div class="env_set_row">
+                        <span class="env_set_text">
+                            <span class="env_set_label">Token budget override</span>
+                            <span class="env_set_desc">0 = use each lorebook's own budget.</span>
+                        </span>
+                        <input id="env_token_budget" type="number" min="0" class="text_pole textarea_compact env_set_control" />
+                    </div>
+
+                    <div class="env_set_block">
+                        <span class="env_set_text">
+                            <span class="env_set_label">Monitored lorebooks</span>
+                            <span class="env_set_desc">Check which lorebooks to track (empty = track all).</span>
+                        </span>
+                        <div id="env_monitored_lorebooks" class="env-lorebook-list"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>

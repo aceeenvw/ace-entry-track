@@ -6,6 +6,7 @@
 import { initScanner, getScannerState } from './scanner.js';
 import { initTracker, setEnabled as setTrackerEnabled } from './tracker.js';
 import { initLorebookList, populateLorebookList } from './ui/lorebook-list.js';
+import { applyPanelLayout } from './ui/panel.js';
 import { log } from './utils/log.js';
 
 const MODULE_NAME = 'ace-entry-track';
@@ -13,12 +14,17 @@ const MODULE_NAME = 'ace-entry-track';
 // Derived from script location so the install folder can be renamed.
 const EXT_PATH = new URL('.', import.meta.url).pathname.replace(/^\//, '').replace(/\/$/, '');
 
+// Allowed panel layout modes — values outside this set are coerced to
+// default, preventing arbitrary data-attribute injection from a poisoned setting.
+export const PANEL_LAYOUTS = Object.freeze(['solid', 'compact']);
+
 const defaultSettings = Object.freeze({
     enabled: true,
     tokenBudgetOverride: 0,
     monitoredLorebooks: [],
     sortBy: 'order',
     sortOrder: 'asc',
+    panelLayout: 'solid',
 });
 
 /**
@@ -48,6 +54,9 @@ function hydrateSettings() {
             if (Array.isArray(incoming)) base[key] = incoming.filter(v => typeof v === 'string');
         }
     }
+
+    // Constrain enum-like settings to their allowlist (defense in depth).
+    if (!PANEL_LAYOUTS.includes(base.panelLayout)) base.panelLayout = defaultSettings.panelLayout;
 
     extensionSettings[MODULE_NAME] = base;
     return base;
@@ -83,6 +92,7 @@ function loadSettingsUI() {
     const s = getSettings();
     $('#env_enabled').prop('checked', s.enabled);
     $('#env_token_budget').val(s.tokenBudgetOverride);
+    $('#env_panel_layout').val(PANEL_LAYOUTS.includes(s.panelLayout) ? s.panelLayout : 'solid');
     populateLorebookList();
 }
 
@@ -99,6 +109,13 @@ function bindSettingsEvents() {
         const clamped = Number.isFinite(v) ? Math.max(0, Math.min(v, 999999)) : 0;
         getSettings().tokenBudgetOverride = clamped;
         saveSettings();
+    });
+    $('#env_panel_layout').on('change', function () {
+        const v = String($(this).val());
+        const layout = PANEL_LAYOUTS.includes(v) ? v : 'solid';
+        getSettings().panelLayout = layout;
+        saveSettings();
+        applyPanelLayout(layout);
     });
     // .val() returns the raw lorebook name set via jQuery .val(name) in
     // lorebook-list.js — safe from XSS even when names contain HTML.
@@ -117,8 +134,6 @@ function bindSettingsEvents() {
 // ── Bootstrap ──
 
 jQuery(async () => {
-    log.info('Loading...');
-
     try {
         const settingsHtml = await $.get(`${EXT_PATH}/settings.html`);
         $('#extensions_settings').append(settingsHtml);
@@ -139,5 +154,5 @@ jQuery(async () => {
     initTracker(getSettings, saveSettings);
     setTrackerEnabled(settings.enabled);
 
-    log.info('Loaded successfully');
+    log.summary(`ready (v${globalThis.__aet?.v ?? '?'})`);
 });

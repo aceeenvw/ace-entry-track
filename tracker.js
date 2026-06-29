@@ -66,20 +66,46 @@ async function loadLorebookCached(name) {
     }
 }
 
-/** True if the entry should be shown given its characterFilter. */
+// Entry visibility under its characterFilter (names + tags).
+// Fail-open: uncertainty shows the entry so a real constant is never hidden.
 function passesCharacterFilter(rawEntry) {
     const cf = rawEntry.characterFilter;
     if (!cf || typeof cf !== 'object') return true;
+
     const names = Array.isArray(cf.names) ? cf.names : [];
-    if (names.length === 0) return true;
+    const tags = Array.isArray(cf.tags) ? cf.tags : [];
+    if (names.length === 0 && tags.length === 0) return true;
+
+    const isExclude = !!cf.isExclude;
+
     try {
         const ctx = SillyTavern.getContext();
         const charId = ctx.characterId;
-        const charName = charId !== undefined ? ctx.characters?.[charId]?.name : null;
-        if (!charName) return true;
-        const isExclude = !!cf.isExclude;
-        const listed = names.includes(charName);
-        return isExclude ? !listed : listed;
+        const character = charId !== undefined ? ctx.characters?.[charId] : null;
+        if (!character) return true;
+
+        // Names: matched against the char display name.
+        if (names.length > 0) {
+            const charName = character.name;
+            if (charName) {
+                const listed = names.includes(charName);
+                if (isExclude ? listed : !listed) return false;
+            }
+        }
+
+        // Tags: cf.tags (tag IDs) vs the char's IDs in tagMap[avatar].
+        // String-compared since IDs vary string/number across versions.
+        if (tags.length > 0) {
+            const tagKey = character.avatar;
+            const tagMapEntry = tagKey ? ctx.tagMap?.[tagKey] : null;
+            if (Array.isArray(tagMapEntry)) {
+                const filterTagIds = new Set(tags.map(t => String(t)));
+                const includesTag = tagMapEntry.some(t => filterTagIds.has(String(t)));
+                if (isExclude ? includesTag : !includesTag) return false;
+            }
+        }
+
+        return true;
     } catch {
         return true;
     }
@@ -273,12 +299,16 @@ async function onWorldInfoActivated(entryList) {
 
     const constants = processed.filter(e => e.constant || e.triggerType === 'constant');
     const worlds = [...new Set(processed.map(e => e.world).filter(Boolean))];
-    log.info(`WORLD_INFO_ACTIVATED: ${processed.length} entries (${scanActivated.length} scanned + ${processed.length - scanActivated.length} constant-merge) from [${worlds.join(', ')}] in ${elapsed}ms (${constants.length} constant)`);
+
+    // One concise line per generation; details gated behind verbose.
+    const acc = state.selfTest ? ` · ${state.selfTest.accuracy}% acc` : '';
+    const diff = (state.newUids.size || state.removedEntries.length)
+        ? ` · +${state.newUids.size}/−${state.removedEntries.length}` : '';
+    log.summary(`${processed.length} entries · ${constants.length} const · ${elapsed}ms${acc}${diff}`);
+
+    log.info(`activated: ${scanActivated.length} scanned + ${processed.length - scanActivated.length} merged from [${worlds.join(', ')}]`);
     if (state.selfTest) {
-        log.info(`Self-test: ${state.selfTest.accuracy}% accuracy (${state.selfTest.match} match, ${state.selfTest.explained} explained, ${state.selfTest.recursive} recursive, ${state.selfTest.unresolved} unresolved)`);
-    }
-    if (state.newUids.size > 0 || state.removedEntries.length > 0) {
-        log.info(`Diff: +${state.newUids.size} new, −${state.removedEntries.length} removed`);
+        log.info(`self-test: ${state.selfTest.match} match · ${state.selfTest.explained} explained · ${state.selfTest.recursive} recursive · ${state.selfTest.unresolved} unresolved`);
     }
 
     if (gen !== _activationGeneration) return;

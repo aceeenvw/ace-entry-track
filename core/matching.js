@@ -244,7 +244,8 @@ function formatChatBuffer(messages, includeNames) {
 export function buildSourcesForEntry(entry) {
     const ctx = SillyTavern.getContext();
     const charId = ctx.characterId;
-    const charData = charId !== undefined ? ctx.characters?.[charId]?.data : null;
+    const char = charId !== undefined ? ctx.characters?.[charId] : null;
+    const charData = char?.data ?? null;
     const wiSettings = getWIGlobalSettings();
 
     const sources = [];
@@ -266,7 +267,8 @@ export function buildSourcesForEntry(entry) {
     if (entry.matchCharacterPersonality)      _pushSource(sources, 'personality',   charData?.personality);
     if (entry.matchCharacterDepthPrompt)      _pushSource(sources, 'depth_prompt',  charData?.extensions?.depth_prompt?.prompt);
     if (entry.matchScenario)                  _pushSource(sources, 'scenario',      charData?.scenario);
-    if (entry.matchCreatorNotes)              _pushSource(sources, 'creator_notes', charData?.creator_notes);
+    // creatorcomment fallback covers older cards lacking data.creator_notes.
+    if (entry.matchCreatorNotes)              _pushSource(sources, 'creator_notes', charData?.creator_notes || char?.creatorcomment);
     if (entry.matchPersonaDescription)        _pushSource(sources, 'persona',       ctx.powerUserSettings?.persona_description);
 
     // Extension prompts with scan enabled (Author's Note and others).
@@ -290,7 +292,8 @@ export function buildSourcesForEntry(entry) {
 export function buildAllSources() {
     const ctx = SillyTavern.getContext();
     const charId = ctx.characterId;
-    const charData = charId !== undefined ? ctx.characters?.[charId]?.data : null;
+    const char = charId !== undefined ? ctx.characters?.[charId] : null;
+    const charData = char?.data ?? null;
     const wiSettings = getWIGlobalSettings();
 
     const sources = [];
@@ -307,7 +310,7 @@ export function buildAllSources() {
     _pushSource(sources, 'personality',   charData?.personality);
     _pushSource(sources, 'depth_prompt',  charData?.extensions?.depth_prompt?.prompt);
     _pushSource(sources, 'scenario',      charData?.scenario);
-    _pushSource(sources, 'creator_notes', charData?.creator_notes);
+    _pushSource(sources, 'creator_notes', charData?.creator_notes || char?.creatorcomment);
     _pushSource(sources, 'persona',       ctx.powerUserSettings?.persona_description);
 
     const extPrompts = ctx.extensionPrompts || {};

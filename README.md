@@ -4,7 +4,7 @@
 > See **which** entries fire, **why** they fired, and **how** your token budget is spent — in a compact side panel with inline context preview.
 
 ![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-9333ea)
-![Version](https://img.shields.io/badge/version-2.0.1-3b82f6)
+![Version](https://img.shields.io/badge/version-2.1.0-3b82f6)
 ![Author](https://img.shields.io/badge/author-aceenvw-1f2937)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-10b981)
 
@@ -113,11 +113,14 @@ Each row in the panel also shows an **accuracy dot**:
 
 ### UI & performance
 
+- **Two layout modes** — `solid` full-height side panel (default) or a denser `compact` view that trims itself to just the toolbar, filter chips, and entry list. Switch live in settings.
 - **Draggable floating trigger button** — stays where you drop it on desktop; on mobile, snaps to the nearest left/right edge after each drag.
 - **Filter chips + search** — filter by trigger type with one click; search across titles / keys / world names.
+- **Collapsible key dropdowns** — Primary / Secondary keys fold away by default in the entry detail; click to reveal.
 - **Expand / collapse all** with lazy detail injection — large lorebooks stay snappy.
 - **Sparkline per entry** — last 12 generations' activation history dotted next to the title.
 - **Warnings system** — probability without sticky (flicker risk), empty content, equal-weight group members, and more.
+- **Reduced-motion aware** — honors the OS "reduce motion" preference.
 - **Mobile-friendly** — responsive panel, touch-optimized drag, pointer-capture events.
 
 ### Lorebook discovery
@@ -155,8 +158,17 @@ Found under **Extensions** → **⊹ ACE ENTRY TRACK ⊹**:
 | Setting                   | Default | Description                                                                |
 |---------------------------|---------|----------------------------------------------------------------------------|
 | **Enable / Disable**      | on      | Toggle the tracker on or off without uninstalling                          |
+| **Panel layout**          | `solid` | `solid` = full-height side panel. `compact` = narrower, denser layout      |
 | **Token budget override** | `0`     | Custom budget cap. `0` = use lorebook default                              |
 | **Monitored lorebooks**   | empty   | Check specific lorebooks to track. Empty = track every active lorebook     |
+
+### Console output
+
+The extension stays quiet in the browser console — one line on load and one compact summary per generation (entries · constants · time · accuracy · diff). For full diagnostics, run this in DevTools:
+
+```js
+globalThis.__aet.verbose = true;
+```
 
 ---
 
@@ -165,7 +177,7 @@ Found under **Extensions** → **⊹ ACE ENTRY TRACK ⊹**:
 The codebase is split into three concerns: **state/processing** (`core/`), **UI rendering** (`ui/`), and **utilities** (`utils/`). Top-level files wire them together.
 
 ```
-ace-entry-track-public/
+ace-entry-track/
 ├── manifest.json         · ST extension manifest
 ├── index.js              · entry point, event wiring, settings load
 ├── tracker.js            · activation pipeline orchestrator
@@ -187,7 +199,7 @@ ace-entry-track-public/
 │
 └── utils/
     ├── html.js           · HTML escape, DOM helpers
-    ├── ids.js            · stable ID derivation (signature lives here)
+    ├── ids.js            · stable composite world::uid identity
     └── log.js            · centralized [ACE]-prefixed logger
 ```
 
@@ -239,12 +251,23 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 
 ## Limitations
 
-- **Character-tag filters in constants** — `characterFilter.tags` is shown in the entry detail and respected by ST's own activation pipeline, but the standalone constant-merge pass in `tracker.js` (used when `WORLD_INFO_ACTIVATED` doesn't fire) only checks `characterFilter.names`. A constant restricted by tags may surface in this panel for every character even when ST itself filters it out for some.
+- **Character-tag filters are fail-open** — when a constant is restricted by `characterFilter.tags` but the active character or tag map can't be resolved, the entry is shown rather than hidden. A real constant is never dropped; only the clear-cut "tagged / not-tagged" case is filtered.
 - **`auto_update: true`** — the manifest enables auto-updates from the install URL. If you've forked or vendored the extension, change this to `false` in `manifest.json`.
 
 ---
 
 ## Changelog
+
+### 2.1.0 — Layout modes, collapsible keys & filter accuracy
+- **Feature**: **Panel layout** setting — choose between `solid` (full-height side panel, default) and `compact`. Compact is narrower (~300px), denser, hides sparklines, and strips the **Context Preview** and **Budget bar** down to header → toolbar → filter chips → entry list. Applied live via a validated `data-env-layout` attribute on the panel root; desktop-only (mobile stays full-width).
+- **Feature**: **Primary** and **Secondary keys** in the expanded entry detail are now collapsed-by-default dropdowns (click the header to expand) — keeps long key lists from dominating the detail view. Applies in both layout modes.
+- **Fix**: constant-merge character filter now honors `characterFilter.tags` (resolved via `tagMap[character.avatar]`), not just `.names` — *fail-open* so a real constant is never hidden on uncertainty.
+- **Fix**: creator-notes scan source falls back to the legacy top-level `creatorcomment` field (`data.creator_notes || creatorcomment`), matching ST, for older character cards.
+- **Polish**: trigger button (FAB) centers its SVG via flexbox; the entry-count badge is now muted to the theme surface instead of bright red.
+- **Polish**: timed-effect rows (sticky / cooldown / delay / probability) are grouped in an accent sub-block in the entry detail, separate from base metadata.
+- **Polish**: panel header shortened to "ENTRY TRACK" with shrink-to-ellipsis so action buttons stay visible on narrow panels.
+- **Polish**: console output is quiet by default — one summary line per generation; `globalThis.__aet.verbose = true` restores full diagnostics.
+- **A11y**: `prefers-reduced-motion` disables the panel slide, badge pop, budget pulse, and new-entry flash.
 
 ### 2.0.1 — Audit hardening
 - **Security**: null-prototype objects for entry grouping (blocks lorebooks named `__proto__` / `toString` / `constructor` from bricking the panel render)

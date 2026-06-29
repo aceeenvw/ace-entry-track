@@ -140,9 +140,10 @@
     left: 12px;
     width: 40px;
     height: 40px;
-    font-size: 20px;
-    line-height: 40px;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--SmartThemeBodyColor);
     cursor: grab;
     z-index: 9990;
     border-radius: 50%;
@@ -169,8 +170,8 @@
     right: -2px;
     font-size: 10px;
     font-weight: 700;
-    color: white;
-    background: #ef4444;
+    color: var(--SmartThemeBodyColor);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 80%, var(--SmartThemeBodyColor) 20%);
     line-height: 1;
     padding: 2px 5px;
     border-radius: 8px;
@@ -217,6 +218,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px;
     background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 85%, var(--SmartThemeQuoteColor));
     border-bottom: 1px solid var(--SmartThemeBorderColor);
@@ -224,21 +226,34 @@
 }
 .env-panel__title {
     font-weight: 700;
-    font-size: 13px;
+    font-size: 12px;
+    letter-spacing: 0.2px;
     color: var(--SmartThemeBodyColor);
     white-space: nowrap;
+    /* Allow the title to shrink + ellipsis instead of pushing the action
+       buttons off the panel edge when stats/diff badges are present. */
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.env-panel__title svg { width: 14px; height: 14px; vertical-align: -2px; }
+.env-panel__title svg { width: 13px; height: 13px; vertical-align: -2px; }
 .env-panel__header-actions {
     display: flex;
     align-items: center;
     gap: 6px;
+    /* Action buttons (refresh / close) must never shrink or wrap. */
+    flex: 0 0 auto;
 }
 .env-panel__stats {
     font-size: 10px;
     color: var(--SmartThemeBodyColor);
     opacity: 0.5;
     white-space: nowrap;
+    /* Stats can shrink + ellipsis before the buttons are ever touched. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .env-panel__close,
 .env-panel__refresh {
@@ -725,6 +740,14 @@
 }
 .env-detail__section { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 11px; }
 .env-detail__section--full { flex-direction: column; gap: 4px; padding: 4px 0; }
+/* Accent sub-block: visually groups the timed-effect rows. */
+.env-detail__group {
+    margin: 4px 0;
+    padding: 4px 10px;
+    border-left: 2px solid color-mix(in srgb, var(--SmartThemeQuoteColor) 45%, transparent);
+    border-radius: 0 6px 6px 0;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 5%, transparent);
+}
 .env-detail__label {
     font-size: 10px; font-weight: 600;
     color: var(--SmartThemeQuoteColor);
@@ -746,6 +769,45 @@
 }
 .env-detail__desc { font-size: 10px; color: var(--SmartThemeBodyColor); opacity: 0.5; font-style: italic; }
 .env-detail__keys { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ── Collapsible key dropdowns (Primary / Secondary) ── */
+.env-keys { gap: 0; }
+.env-keys-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 2px 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: opacity 0.15s;
+}
+.env-keys-toggle:hover { opacity: 0.8; }
+.env-keys-toggle .env-detail__label { margin: 0; }
+.env-keys-toggle__count {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.5;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent);
+    border-radius: 4px;
+    padding: 0 5px;
+    line-height: 1.5;
+}
+.env-keys-toggle__chevron {
+    margin-left: auto;
+    display: inline-flex;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+}
+.env-keys-toggle:hover .env-keys-toggle__chevron { opacity: 0.8; }
+.env-keys-toggle__chevron svg { width: 11px; height: 11px; }
+/* Collapsed by default; source-order wins over .env-detail__keys flex. */
+.env-keys-body { display: none; margin-top: 4px; }
+.env-keys--open .env-keys-body { display: flex; }
+
 .env-key {
     font-size: 9px; padding: 1px 5px; border-radius: 4px;
     background: color-mix(in srgb, var(--SmartThemeQuoteColor) 15%, var(--SmartThemeChatTintColor));
@@ -992,9 +1054,72 @@
     .env-panel { width: 100vw; }
     .env-trigger {
         bottom: auto; top: 36px; left: auto; right: 8px;
-        width: 36px; height: 36px; font-size: 18px; line-height: 36px;
+        width: 36px; height: 36px;
         z-index: 99999 !important; opacity: 0.7;
     }
     .env-filter__chip { padding: 4px 8px; font-size: 11px; }
     .env-toolbar .env-search__input { padding: 6px 10px; font-size: 13px; }
+}
+
+/* ── Reduced Motion ──
+   Disable slide / pop / pulse animations + transitions for users who ask
+   the OS to minimize motion. Matches ST's own reduced-motion handling. */
+@media (prefers-reduced-motion: reduce) {
+    .env-panel,
+    .env-trigger,
+    .env-budget__fill,
+    .env-match-strength__fill,
+    .env-highlight,
+    .env-detail {
+        transition: none !important;
+    }
+    .env-trigger:not([data-env-badge="0"])::after,
+    .env-budget__alert,
+    .env-entry--new {
+        animation: none !important;
+    }
+}
+
+/* ── Compact Layout Mode ──
+   Selected via the "Panel layout" setting; sets data-env-layout="compact"
+   on the panel root. Desktop-only — the mobile rule above already forces a
+   full-width panel, and this whole block is guarded by min-width so the
+   higher-specificity id selector can't override the mobile width. */
+@media (min-width: 769px) {
+    #env_tracker_panel[data-env-layout="compact"] {
+        width: 300px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-panel__header {
+        padding: 7px 10px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-panel__title {
+        font-size: 12px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-toolbar,
+    #env_tracker_panel[data-env-layout="compact"] .env-filter,
+    #env_tracker_panel[data-env-layout="compact"] .env-budget {
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-entry__row {
+        padding: 3px 10px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-entry__title {
+        font-size: 11px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-world__header {
+        padding: 5px 10px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-detail {
+        font-size: 10px;
+    }
+    #env_tracker_panel[data-env-layout="compact"] .env-spark {
+        display: none;
+    }
+    /* Minimal compact: drop the context preview and budget bar, leaving
+       header → toolbar → filter chips → world groups + entry list. */
+    #env_tracker_panel[data-env-layout="compact"] .env-context,
+    #env_tracker_panel[data-env-layout="compact"] .env-budget {
+        display: none;
+    }
 }

@@ -51,6 +51,7 @@ export function initPanel(getSettingsFn, saveFn, reEvaluateFn) {
     createPanel();
     createTooltip();
     attachPanelGlobals();
+    try { applyPanelLayout(_getSettings?.().panelLayout); } catch { /* non-fatal */ }
 }
 
 export function attachPanelGlobals() {
@@ -69,6 +70,20 @@ export function detachPanelGlobals() {
     document.removeEventListener('keydown', _escHandler);
     document.removeEventListener('pointerdown', _tapAwayHandler, true);
     _escAttached = false;
+}
+
+// ── Layout Mode ──
+
+// Local mirror of index.js PANEL_LAYOUTS — avoids an index↔panel import cycle.
+const PANEL_LAYOUTS = ['solid', 'compact'];
+
+// Reflect layout onto the panel root as a data-attribute for CSS.
+// Allowlist-validated so a poisoned setting can't inject an arbitrary value.
+export function applyPanelLayout(layout) {
+    const panel = document.getElementById('env_tracker_panel');
+    if (!panel) return;
+    const safe = PANEL_LAYOUTS.includes(layout) ? layout : 'solid';
+    panel.dataset.envLayout = safe;
 }
 
 // ── Panel Creation ──
@@ -160,6 +175,19 @@ function createPanel() {
                     textEl.textContent = entryData.content;
                     expandBtn.remove();
                 }
+            }
+            return;
+        }
+
+        // Key dropdown toggle; stopPropagation so the entry stays open.
+        const keysToggle = e.target.closest('.env-keys-toggle');
+        if (keysToggle) {
+            e.stopPropagation();
+            const section = keysToggle.closest('.env-keys');
+            if (section) {
+                const open = section.classList.toggle('env-keys--open');
+                const chevron = keysToggle.querySelector('.env-keys-toggle__chevron');
+                if (chevron) chevron.innerHTML = open ? ICONS.chevron_up : ICONS.chevron_down;
             }
             return;
         }
@@ -633,7 +661,7 @@ export function renderPanel() {
 
     // Header
     html += `<div class="env-panel__header">`;
-    html += `<span class="env-panel__title">${ICONS.tracker} ACE ENTRY TRACK</span>`;
+    html += `<span class="env-panel__title">${ICONS.tracker} ENTRY TRACK</span>`;
     html += `<div class="env-panel__header-actions">`;
     html += `<span class="env-panel__stats">${totalAll} entries · ~${totalTokens} tok</span>`;
     if (state.newUids.size > 0 || removed.length > 0) {
@@ -891,6 +919,22 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
     return html;
 }
 
+// Collapsed-by-default key dropdown (header + count + chevron over chips).
+// Keeps long key lists from dominating the detail view.
+function renderKeyDropdown(labelText, keys, chipClass) {
+    if (!keys || keys.length === 0) return '';
+    let html = `<div class="env-detail__section env-detail__section--full env-keys">`;
+    html += `<button class="env-keys-toggle" type="button">`;
+    html += `<span class="env-detail__label">${escapeHtml(labelText)}</span>`;
+    html += `<span class="env-keys-toggle__count">${keys.length}</span>`;
+    html += `<span class="env-keys-toggle__chevron">${ICONS.chevron_down}</span>`;
+    html += `</button>`;
+    html += `<div class="env-keys-body env-detail__keys">`;
+    for (const k of keys) html += `<span class="env-key${chipClass ? ' ' + chipClass : ''}">${escapeHtml(k)}</span>`;
+    html += `</div></div>`;
+    return html;
+}
+
 /** Detail block — lazy-injected on expand. */
 function renderEntryDetail(entry) {
     const tt = TRIGGER_TYPES[entry.triggerType] || TRIGGER_TYPES.normal;
@@ -925,18 +969,22 @@ function renderEntryDetail(entry) {
     html += `<div class="env-detail__section"><span class="env-detail__label">Order</span><span class="env-detail__value">${entry.order ?? '—'}</span></div>`;
     html += `<div class="env-detail__section"><span class="env-detail__label">Size</span><span class="env-detail__value">${entry.charCount} chars · ~${entry.estimatedTokens} tokens${entry.ignoreBudget ? ' · <span class="env-detail__badge-inline">IGNORES BUDGET</span>' : ''}</span></div>`;
 
+    // Timed-effect rows grouped in one accent block, separate from base
+    // metadata. Rendered only when at least one applies.
+    let timed = '';
     if (entry.sticky) {
         let stickyText = `${entry.sticky} turn duration`;
         if (entry.stickyRemaining !== null) stickyText += ` · <span class="env-detail__badge-inline">${entry.stickyRemaining} remaining</span>`;
-        html += `<div class="env-detail__section"><span class="env-detail__label">Sticky</span><span class="env-detail__value">${stickyText}</span></div>`;
+        timed += `<div class="env-detail__section"><span class="env-detail__label">Sticky</span><span class="env-detail__value">${stickyText}</span></div>`;
     }
     if (entry.cooldown) {
         let cdText = `${entry.cooldown} turn cooldown`;
         if (entry.cooldownRemaining !== null) cdText += ` · <span class="env-detail__badge-inline">${entry.cooldownRemaining} remaining</span>`;
-        html += `<div class="env-detail__section"><span class="env-detail__label">Cooldown</span><span class="env-detail__value">${cdText}</span></div>`;
+        timed += `<div class="env-detail__section"><span class="env-detail__label">Cooldown</span><span class="env-detail__value">${cdText}</span></div>`;
     }
-    if (entry.delay) html += `<div class="env-detail__section"><span class="env-detail__label">Delay</span><span class="env-detail__value">${entry.delay} turn delay before activation</span></div>`;
-    if (entry.probability < 100) html += `<div class="env-detail__section"><span class="env-detail__label">Probability</span><span class="env-detail__value">${entry.probability}%</span></div>`;
+    if (entry.delay) timed += `<div class="env-detail__section"><span class="env-detail__label">Delay</span><span class="env-detail__value">${entry.delay} turn delay before activation</span></div>`;
+    if (entry.probability < 100) timed += `<div class="env-detail__section"><span class="env-detail__label">Probability</span><span class="env-detail__value">${entry.probability}%</span></div>`;
+    if (timed) html += `<div class="env-detail__group">${timed}</div>`;
     if (entry.group) {
         html += `<div class="env-detail__section"><span class="env-detail__label">Group</span><span class="env-detail__value">${escapeHtml(entry.group)}${entry.groupWeight ? ` (weight: ${entry.groupWeight})` : ''}${entry.groupOverride ? ' · <span class="env-detail__badge-inline">PRIORITY</span>' : ''}</span></div>`;
         // Composite world::uid identity — bare uid collides across books
@@ -1050,16 +1098,8 @@ function renderEntryDetail(entry) {
         }
     }
 
-    if (entry.keys.length > 0) {
-        html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Primary keys</span><div class="env-detail__keys">`;
-        for (const k of entry.keys) html += `<span class="env-key">${escapeHtml(k)}</span>`;
-        html += `</div></div>`;
-    }
-    if (entry.secondaryKeys.length > 0) {
-        html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Secondary keys</span><div class="env-detail__keys">`;
-        for (const k of entry.secondaryKeys) html += `<span class="env-key env-key--secondary">${escapeHtml(k)}</span>`;
-        html += `</div></div>`;
-    }
+    html += renderKeyDropdown('Primary keys', entry.keys, '');
+    html += renderKeyDropdown('Secondary keys', entry.secondaryKeys, 'env-key--secondary');
 
     if (entry.matchedKeys) {
         const mk = entry.matchedKeys;

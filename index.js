@@ -1,13 +1,14 @@
-// ⊹ ACE ENTRY TRACK ⊹ — index.js
+// ACE ENTRY TRACK - index.js
 // Bootstrap: settings hydration, UI mount, module wiring.
 // Settings load uses an allowlist loop (not lodash.merge) so __proto__ /
 // constructor / prototype keys in the persisted JSON cannot poison.
 
-import { initScanner, getScannerState } from './scanner.js';
-import { initTracker, setEnabled as setTrackerEnabled } from './tracker.js';
+import { initScanner, getScannerState, setScannerEnabled } from './scanner.js';
+import { initTracker, refreshTrackerUI, setEnabled as setTrackerEnabled } from './tracker.js';
 import { initLorebookList, populateLorebookList } from './ui/lorebook-list.js';
 import { applyPanelLayout } from './ui/panel.js';
 import { log } from './utils/log.js';
+import { t } from './i18n.js';
 
 const MODULE_NAME = 'ace-entry-track';
 
@@ -20,11 +21,14 @@ export const PANEL_LAYOUTS = Object.freeze(['solid', 'compact']);
 
 const defaultSettings = Object.freeze({
     enabled: true,
-    tokenBudgetOverride: 0,
     monitoredLorebooks: [],
     sortBy: 'order',
     sortOrder: 'asc',
     panelLayout: 'solid',
+    triggerDesktopX: null,
+    triggerDesktopY: null,
+    triggerMobileX: null,
+    triggerMobileY: null,
 });
 
 /**
@@ -44,7 +48,9 @@ function hydrateSettings() {
         const incoming = raw[key];
         const defaultVal = defaultSettings[key];
 
-        if (typeof defaultVal === 'boolean') {
+        if (defaultVal === null) {
+            if (typeof incoming === 'number' && Number.isFinite(incoming)) base[key] = incoming;
+        } else if (typeof defaultVal === 'boolean') {
             if (typeof incoming === 'boolean') base[key] = incoming;
         } else if (typeof defaultVal === 'number') {
             if (typeof incoming === 'number' && Number.isFinite(incoming)) base[key] = incoming;
@@ -91,9 +97,11 @@ function saveSettings() {
 function loadSettingsUI() {
     const s = getSettings();
     $('#env_enabled').prop('checked', s.enabled);
-    $('#env_token_budget').val(s.tokenBudgetOverride);
     $('#env_panel_layout').val(PANEL_LAYOUTS.includes(s.panelLayout) ? s.panelLayout : 'solid');
     populateLorebookList();
+    document.querySelectorAll('[data-env-i18n]').forEach(element => {
+        element.textContent = t(element.dataset.envI18n);
+    });
 }
 
 function bindSettingsEvents() {
@@ -101,14 +109,8 @@ function bindSettingsEvents() {
         const s = getSettings();
         s.enabled = $('#env_enabled').is(':checked');
         saveSettings();
+        setScannerEnabled(s.enabled);
         setTrackerEnabled(s.enabled);
-    });
-    $('#env_token_budget').on('input', function () {
-        const v = parseInt($(this).val(), 10);
-        // Clamp to [0, 999999]; non-finite or negative means "no override".
-        const clamped = Number.isFinite(v) ? Math.max(0, Math.min(v, 999999)) : 0;
-        getSettings().tokenBudgetOverride = clamped;
-        saveSettings();
     });
     $('#env_panel_layout').on('change', function () {
         const v = String($(this).val());
@@ -127,7 +129,6 @@ function bindSettingsEvents() {
         });
         settings.monitoredLorebooks = checked;
         saveSettings();
-        log.info('Monitored lorebooks:', checked);
     });
 }
 
@@ -154,5 +155,10 @@ jQuery(async () => {
     initTracker(getSettings, saveSettings);
     setTrackerEnabled(settings.enabled);
 
-    log.summary(`ready (v${globalThis.__aet?.v ?? '?'})`);
+    const { eventSource, event_types } = SillyTavern.getContext();
+    eventSource.on(event_types.SETTINGS_UPDATED, () => {
+        loadSettingsUI();
+        refreshTrackerUI();
+    });
+
 });

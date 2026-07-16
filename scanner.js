@@ -4,7 +4,6 @@
 // with its origin for display in settings.
 
 import { populateLorebookList } from './ui/lorebook-list.js';
-import { log } from './utils/log.js';
 
 let _getSettings;
 let _saveSettingsDebounced;
@@ -31,14 +30,7 @@ export function initScanner(getSettingsFn, saveFn) {
     _getSettings = getSettingsFn;
     _saveSettingsDebounced = saveFn;
 
-    if (!isEnabled()) {
-        log.info('Disabled via settings, scanner not initialized');
-        return;
-    }
-
-    discoverLorebooks().then(() => {
-        populateLorebookList();
-    });
+    if (isEnabled()) void refreshScanner();
 
     const { eventSource, event_types } = SillyTavern.getContext();
 
@@ -48,31 +40,41 @@ export function initScanner(getSettingsFn, saveFn) {
     if (event_types.CHARACTER_EDITED) {
         eventSource.on(event_types.CHARACTER_EDITED, onLorebookSettingsChanged);
     }
+    if (event_types.PERSONA_CHANGED) {
+        eventSource.on(event_types.PERSONA_CHANGED, onLorebookSettingsChanged);
+    }
+    if (event_types.PERSONA_UPDATED) {
+        eventSource.on(event_types.PERSONA_UPDATED, onLorebookSettingsChanged);
+    }
 
     try {
         $('#character_world').on('change', onLorebookSettingsChanged);
         $('#world_info').on('change', onLorebookSettingsChanged);
     } catch { /* non-fatal */ }
 
-    log.info('Scanner initialized');
+}
+
+export async function refreshScanner() {
+    if (!isEnabled()) return;
+    await discoverLorebooks();
+    if (!isEnabled()) return;
+    pruneStaleMonitored();
+    populateLorebookList();
+}
+
+export function setScannerEnabled(enabled) {
+    _discoveryGeneration++;
+    if (enabled) void refreshScanner();
 }
 
 function onChatChanged() {
     if (!isEnabled()) return;
-    discoverLorebooks().then(() => {
-        pruneStaleMonitored();
-        populateLorebookList();
-        log.debug('Chat changed — re-discovered lorebooks');
-    });
+    void refreshScanner();
 }
 
 function onLorebookSettingsChanged() {
     if (!isEnabled()) return;
-    discoverLorebooks().then(() => {
-        pruneStaleMonitored();
-        populateLorebookList();
-        log.debug('Lorebook settings changed — re-discovered lorebooks');
-    });
+    void refreshScanner();
 }
 
 /** Drop monitored selections whose lorebook is no longer attached. */
@@ -86,7 +88,6 @@ function pruneStaleMonitored() {
 
     if (settings.monitoredLorebooks.length < before) {
         _saveSettingsDebounced?.();
-        log.info(`Pruned ${before - settings.monitoredLorebooks.length} stale monitored lorebook(s)`);
     }
 }
 
@@ -141,19 +142,17 @@ async function discoverLorebooks() {
                     for (let i = 0; i < limit; i++) addBook(found, additionalBooks[i], 'char-additional');
                 }
             }
-        } catch (e) {
-            log.debug('Slash command discovery failed, using DOM fallback:', e.message);
+        } catch {
             tryCharDomFallback(found);
         }
     }
 
-    if (gen !== _discoveryGeneration) return;
+    if (!isEnabled() || gen !== _discoveryGeneration) return;
 
     state.availableLorebooks = [...found.entries()]
         .map(([name, source]) => ({ name, source }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    log.info(`Discovered lorebooks: [${state.availableLorebooks.map(b => `${b.name} (${b.source})`).join(', ')}]`);
 }
 
 /** Read global WI selection from #world_info <select> (option text = name). */
@@ -166,9 +165,7 @@ function discoverGlobalLorebooks(found) {
                 addBook(found, opt.textContent, 'global');
             }
         }
-    } catch (e) {
-        log.debug('Global WI DOM read failed:', e.message);
-    }
+    } catch { /* non-fatal */ }
 }
 
 /** Read chat-bound lorebook from chat_metadata['world_info']. */
@@ -178,9 +175,7 @@ function discoverChatLore(ctx, found) {
         if (chatWorld && typeof chatWorld === 'string') {
             addBook(found, chatWorld, 'chat');
         }
-    } catch (e) {
-        log.debug('Chat lore discovery failed:', e.message);
-    }
+    } catch { /* non-fatal */ }
 }
 
 /** Read persona-bound lorebook from powerUserSettings.persona_description_lorebook. */
@@ -190,9 +185,7 @@ function discoverPersonaLore(ctx, found) {
         if (personaWorld && typeof personaWorld === 'string' && personaWorld.trim()) {
             addBook(found, personaWorld, 'persona');
         }
-    } catch (e) {
-        log.debug('Persona lore discovery failed:', e.message);
-    }
+    } catch { /* non-fatal */ }
 }
 
 /** DOM-scraping fallback for character lorebooks if slash command fails. */
@@ -216,18 +209,7 @@ function tryCharDomFallback(found) {
                 }
             });
         }
-    } catch (e) {
-        log.debug('DOM fallback error (non-fatal):', e.message);
-    }
-}
-
-/** Re-discover from an external trigger (e.g. post-generation, charLore swap). */
-export function refreshDiscovery() {
-    if (!isEnabled()) return;
-    discoverLorebooks().then(() => {
-        pruneStaleMonitored();
-        populateLorebookList();
-    });
+    } catch { /* non-fatal */ }
 }
 
 /**
@@ -244,7 +226,6 @@ export function addDiscoveredLorebook(name) {
     state.availableLorebooks.push({ name: safe, source: 'auto' });
     state.availableLorebooks.sort((a, b) => a.name.localeCompare(b.name));
     populateLorebookList();
-    log.info('Auto-discovered lorebook:', safe);
 }
 
 export function getScannerState() {

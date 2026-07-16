@@ -7,46 +7,38 @@
         <div class="inline-drawer-content" style="display: none;">
 
             <div class="env_settings_card">
-                <p class="env_settings_intro">Track which lorebook entries fire during chat — budgets, sources and activations in one panel.</p>
+                <p class="env_settings_intro" data-env-i18n="settings.intro">Track confirmed lorebook activations and reconstructed matching context in one panel.</p>
 
                 <div class="env_settings_section">
-                    <h4 class="env_settings_heading">Behavior</h4>
+                    <h4 class="env_settings_heading" data-env-i18n="settings.behavior">Behavior</h4>
 
                     <label class="env_set_row env_set_toggle" for="env_enabled">
                         <span class="env_set_text">
-                            <span class="env_set_label">Enable Ace Entry Track</span>
-                            <span class="env_set_desc">Monitor and report lorebook entry activations during chat.</span>
+                            <span class="env_set_label" data-env-i18n="settings.enable">Enable Ace Entry Track</span>
+                            <span class="env_set_desc" data-env-i18n="settings.enableDesc">Monitor and report lorebook entry activations during chat.</span>
                         </span>
                         <input id="env_enabled" type="checkbox" />
                     </label>
 
-                    <div class="env_set_row">
+                    <label class="env_set_row" for="env_panel_layout">
                         <span class="env_set_text">
-                            <span class="env_set_label">Panel layout</span>
-                            <span class="env_set_desc">Solid = full-height side panel. Compact = narrower, denser layout.</span>
+                            <span class="env_set_label" data-env-i18n="settings.layout">Panel layout</span>
+                            <span class="env_set_desc" data-env-i18n="settings.layoutDesc">Solid = full-height side panel. Compact = narrower, denser layout.</span>
                         </span>
                         <select id="env_panel_layout" class="text_pole textarea_compact env_set_control">
-                            <option value="solid">Solid (default)</option>
-                            <option value="compact">Compact</option>
+                            <option value="solid" data-env-i18n="settings.solid">Solid (default)</option>
+                            <option value="compact" data-env-i18n="settings.compact">Compact</option>
                         </select>
-                    </div>
+                    </label>
                 </div>
 
                 <div class="env_settings_section">
-                    <h4 class="env_settings_heading">Tracking</h4>
-
-                    <div class="env_set_row">
-                        <span class="env_set_text">
-                            <span class="env_set_label">Token budget override</span>
-                            <span class="env_set_desc">0 = use each lorebook's own budget.</span>
-                        </span>
-                        <input id="env_token_budget" type="number" min="0" class="text_pole textarea_compact env_set_control" />
-                    </div>
+                    <h4 class="env_settings_heading" data-env-i18n="settings.tracking">Tracking</h4>
 
                     <div class="env_set_block">
                         <span class="env_set_text">
-                            <span class="env_set_label">Monitored lorebooks</span>
-                            <span class="env_set_desc">Check which lorebooks to track (empty = track all).</span>
+                            <span class="env_set_label" data-env-i18n="settings.books">Monitored lorebooks</span>
+                            <span class="env_set_desc" data-env-i18n="settings.booksDesc">Check which lorebooks to track (empty = track all).</span>
                         </span>
                         <div id="env_monitored_lorebooks" class="env-lorebook-list"></div>
                     </div>

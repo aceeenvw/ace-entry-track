@@ -1,7 +1,7 @@
 // ⊹ ACE ENTRY TRACK ⊹ — icons.js
 // Monochrome SVG icons (24x24 viewBox, stroke-based, currentColor).
 
-const svg = (d) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const svg = (d) => `<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 
 export const ICONS = {
 
@@ -10,7 +10,6 @@ export const ICONS = {
     vector:       svg('<path d="M6 3v4c0 1 1.5 2 3 2h1"/><path d="M18 3v4c0 1-1.5 2-3 2h-1"/><path d="M9 9l3 3 3-3"/><line x1="12" y1="12" x2="12" y2="21"/>'),
     sticky:       svg('<path d="M15.5 3.5L7 12l-2 6 6-2 8.5-8.5a2.83 2.83 0 0 0-4-4z"/><path d="M5 18l3-3"/>'),
     forced:       svg('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
-    suppressed:   svg('<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>'),
     persona:      svg('<path d="M19 21v-2a4 4 0 0 0-3-3.87"/><path d="M13 3.13a4 4 0 0 1 0 7.75"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'),
     character:    svg('<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>'),
     scenario:     svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/><path d="M10 4v4"/>'),

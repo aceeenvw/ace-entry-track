@@ -6,48 +6,90 @@
 
 import { ICONS } from '../icons.js';
 import { findMatchedKeys, getVectorSettings } from './matching.js';
+import { t } from '../i18n.js';
+
+const TOKEN_CACHE_MAX = 128;
+const tokenCache = new Map();
+
+async function getEstimatedTokens(content, charCount) {
+    const cached = tokenCache.get(content);
+    if (cached !== undefined) {
+        tokenCache.delete(content);
+        tokenCache.set(content, cached);
+        return cached;
+    }
+
+    const pending = (async () => {
+        try {
+            const { getTokenCountAsync } = SillyTavern.getContext();
+            const count = typeof getTokenCountAsync === 'function'
+                ? await getTokenCountAsync(content)
+                : Math.round(charCount / 3.5);
+            return _toNum(count, 0);
+        } catch {
+            return Math.round(charCount / 3.5);
+        }
+    })();
+
+    tokenCache.set(content, pending);
+    while (tokenCache.size > TOKEN_CACHE_MAX) {
+        const oldest = tokenCache.keys().next().value;
+        if (oldest === undefined) break;
+        tokenCache.delete(oldest);
+    }
+
+    const normalized = await pending;
+    if (tokenCache.get(content) === pending) tokenCache.set(content, normalized);
+    return normalized;
+}
 
 // ── Constants ──
 
 export const POSITION_NAMES = {
-    0: 'Before Char',
-    1: 'After Char',
-    2: 'AN Top',
-    3: 'AN Bottom',
-    4: 'At Depth',
-    5: 'EM Top',
-    6: 'EM Bottom',
-    7: 'Outlet',
+    0: t('position.before'),
+    1: t('position.after'),
+    2: t('position.anTop'),
+    3: t('position.anBottom'),
+    4: t('position.depth'),
+    5: t('position.emTop'),
+    6: t('position.emBottom'),
+    7: t('position.outlet'),
 };
 
 export const ROLE_NAMES = {
-    0: 'System',
-    1: 'User',
-    2: 'Assistant',
+    0: t('role.system'),
+    1: t('role.user'),
+    2: t('role.assistant'),
 };
 
+const triggerType = (icon, labelKey, color, descKey) => ({
+    icon,
+    color,
+    get label() { return t(labelKey); },
+    get desc() { return t(descKey); },
+});
+
 export const TRIGGER_TYPES = {
-    constant:   { icon: ICONS.constant, label: 'CONSTANT',   color: '#6366f1', desc: 'Always active — never requires keyword match' },
-    vector:     { icon: ICONS.vector, label: 'VECTOR',     color: '#8b5cf6', desc: 'Activated via RAG/vector similarity search' },
-    sticky:     { icon: ICONS.sticky, label: 'STICKY',     color: '#ef4444', desc: 'Remains active for N turns after triggering' },
-    forced:     { icon: ICONS.forced, label: 'FORCED',     color: '#f59e0b', desc: 'Force-activated by @@activate decorator' },
-    suppressed: { icon: ICONS.suppressed, label: 'SUPPRESSED', color: '#64748b', desc: 'Blocked by @@dont_activate decorator' },
-    persona:    { icon: ICONS.persona, label: 'PERSONA',    color: '#d946ef', desc: 'Matched keywords in user persona' },
-    character:  { icon: ICONS.character, label: 'CHARACTER',  color: '#f59e0b', desc: 'Matched keywords in character card' },
-    scenario:   { icon: ICONS.scenario, label: 'SCENARIO',   color: '#84cc16', desc: 'Matched keywords in scenario text' },
-    normal:     { icon: ICONS.normal, label: 'KEY MATCH',  color: '#10b981', desc: 'Activated by keyword match in chat' },
+    constant: triggerType(ICONS.constant, 'type.constant', '#6366f1', 'type.constantDesc'),
+    vector: triggerType(ICONS.vector, 'type.vector', '#8b5cf6', 'type.vectorDesc'),
+    sticky: triggerType(ICONS.sticky, 'type.sticky', '#ef4444', 'type.stickyDesc'),
+    forced: triggerType(ICONS.forced, 'type.forced', '#f59e0b', 'type.forcedDesc'),
+    persona: triggerType(ICONS.persona, 'type.persona', '#d946ef', 'type.personaDesc'),
+    character: triggerType(ICONS.character, 'type.character', '#f59e0b', 'type.characterDesc'),
+    scenario: triggerType(ICONS.scenario, 'type.scenario', '#84cc16', 'type.scenarioDesc'),
+    normal: triggerType(ICONS.normal, 'type.normal', '#10b981', 'type.normalDesc'),
 };
 
 export const SOURCE_COLORS = {
-    chat:           { color: '#10b981', label: 'Chat',           desc: 'Recent chat messages' },
-    description:    { color: '#f59e0b', label: 'Description',    desc: 'Character description' },
-    personality:    { color: '#e08a2c', label: 'Personality',     desc: 'Character personality' },
-    depth_prompt:   { color: '#0ea5e9', label: 'Depth Prompt',   desc: 'Character depth prompt' },
-    scenario:       { color: '#3b82f6', label: 'Scenario',       desc: 'Scenario text' },
-    creator_notes:  { color: '#78716c', label: 'Creator Notes',  desc: 'Character creator notes' },
-    persona:        { color: '#a855f7', label: 'Persona',        desc: 'User persona description' },
+    chat:           { color: '#10b981', label: t('source.chat') },
+    description:    { color: '#f59e0b', label: t('source.description') },
+    personality:    { color: '#e08a2c', label: t('source.personality') },
+    depth_prompt:   { color: '#0ea5e9', label: t('source.depthPrompt') },
+    scenario:       { color: '#3b82f6', label: t('source.scenario') },
+    creator_notes:  { color: '#78716c', label: t('source.creatorNotes') },
+    persona:        { color: '#a855f7', label: t('source.persona') },
     AN:             { color: '#64748b', label: 'AN',             desc: 'Author\'s Note' },
-    recurse:        { color: '#f97316', label: 'Recurse',        desc: 'Found in content of other activated entries' },
+    recurse:        { color: '#f97316', label: t('source.recurse') },
 };
 
 export const SORT_OPTIONS = {
@@ -117,10 +159,9 @@ function _toCharFilter(cf) {
  * when an entry is still active without a current key hit.
  */
 export function classifyTrigger(entry) {
+    if (entry.decorators?.includes?.('@@activate')) return 'forced';
     if (entry.constant === true) return 'constant';
     if (entry.vectorized === true) return 'vector';
-    if (entry.decorators?.includes?.('@@activate')) return 'forced';
-    if (entry.decorators?.includes?.('@@dont_activate')) return 'suppressed';
 
     // Scan flags say WHERE to look, not WHY an entry triggered. Only
     // classify as persona/character/scenario when no regular keys exist.
@@ -139,7 +180,7 @@ export function classifyTrigger(entry) {
  *      (persona / character / scenario), which would otherwise be hidden
  *      behind generic 'normal' / KEY MATCH when chat keys are also defined.
  *
- * Mechanism types (constant, vector, forced, suppressed) are never overridden.
+ * Configuration types (constant, vector, forced) are never overridden.
  */
 export function reclassifyAfterMatching(result) {
     if (result.triggerType !== 'normal') return;
@@ -152,7 +193,7 @@ export function reclassifyAfterMatching(result) {
 
     // Case 1: sticky persistence.
     if (allMatches.length === 0) {
-        if (result.sticky && result.sticky > 0) {
+        if (result.stickyRemaining !== null) {
             result.triggerType = 'sticky';
         }
         return;
@@ -225,23 +266,12 @@ function readTimedEffects(entry) {
  * strings, arrays, booleans). Nullable fields preserve null so downstream
  * code can fall back to global WI settings.
  */
-export async function processEntry(entry) {
+export async function processEntry(entry, matchingContext = null) {
     const triggerType = classifyTrigger(entry);
     const contentStr = _toStr(entry.content, '', 100000);
     const charCount = contentStr.length;
 
-    let estimatedTokens;
-    try {
-        const { getTokenCountAsync } = SillyTavern.getContext();
-        if (typeof getTokenCountAsync === 'function') {
-            estimatedTokens = await getTokenCountAsync(contentStr);
-        } else {
-            estimatedTokens = Math.round(charCount / 3.5);
-        }
-    } catch {
-        estimatedTokens = Math.round(charCount / 3.5);
-    }
-    estimatedTokens = _toNum(estimatedTokens, 0);
+    const estimatedTokens = await getEstimatedTokens(contentStr, charCount);
 
     const timedEffects = readTimedEffects(entry);
 
@@ -300,7 +330,7 @@ export async function processEntry(entry) {
     };
 
     if (result.vectorized) {
-        const vecSettings = getVectorSettings();
+        const vecSettings = matchingContext?.vectorSettings ?? getVectorSettings();
         result.vectorInfo = vecSettings ? {
             ragEnabled: !!vecSettings.enabled,
             threshold: _toNum(vecSettings.scoreThreshold, 0.25),
@@ -308,7 +338,7 @@ export async function processEntry(entry) {
         } : null;
     }
 
-    result.matchedKeys = findMatchedKeys(result);
+    result.matchedKeys = findMatchedKeys(result, matchingContext);
     reclassifyAfterMatching(result);
     return result;
 }

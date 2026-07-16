@@ -3,15 +3,88 @@
 
 import { ICONS } from '../icons.js';
 import { state } from '../core/state.js';
+import { t } from '../i18n.js';
 
 let _getSettings;
+let _saveSettings;
+let _renderPanel;
+let _viewportHandlerAttached = false;
+let _viewportFrame = null;
+let _mobileMode = null;
 
 // Original position before panel-open shift; restored on close.
-let _savedLeft = null;
+let _savedX = null;
 
-export function initTriggerButton(getSettingsFn) {
+export function initTriggerButton(getSettingsFn, saveSettingsFn, renderPanelFn) {
     _getSettings = getSettingsFn;
+    _saveSettings = saveSettingsFn;
+    _renderPanel = renderPanelFn;
+    _mobileMode = isMobile();
     createTriggerButton();
+    if (!_viewportHandlerAttached) {
+        window.addEventListener('resize', onViewportChanged);
+        window.addEventListener('orientationchange', onViewportChanged);
+        _viewportHandlerAttached = true;
+    }
+}
+
+function clampPosition(btn, persist = false) {
+    const rect = btn.getBoundingClientRect();
+    const maxX = Math.max(0, window.innerWidth - btn.offsetWidth);
+    const maxY = Math.max(0, window.innerHeight - btn.offsetHeight);
+    const x = Math.max(0, Math.min(rect.left, maxX));
+    const y = Math.max(0, Math.min(rect.top, maxY));
+    btn.style.left = `${x}px`;
+    btn.style.top = `${y}px`;
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+    if (persist) persistPosition(x, y);
+}
+
+function persistPosition(x, y) {
+    const settings = _getSettings?.();
+    if (!settings) return;
+    const prefix = isMobile() ? 'triggerMobile' : 'triggerDesktop';
+    settings[`${prefix}X`] = Math.round(x);
+    settings[`${prefix}Y`] = Math.round(y);
+    _saveSettings?.();
+}
+
+function applySavedPosition(btn) {
+    btn.style.left = '';
+    btn.style.top = '';
+    btn.style.right = '';
+    btn.style.bottom = '';
+
+    const settings = _getSettings?.();
+    const prefix = isMobile() ? 'triggerMobile' : 'triggerDesktop';
+    const x = settings?.[`${prefix}X`];
+    const y = settings?.[`${prefix}Y`];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    btn.style.left = `${x}px`;
+    btn.style.top = `${y}px`;
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+    clampPosition(btn);
+}
+
+function onViewportChanged() {
+    if (_viewportFrame !== null) cancelAnimationFrame(_viewportFrame);
+    _viewportFrame = requestAnimationFrame(() => {
+        _viewportFrame = null;
+        const btn = document.getElementById('env_trigger_btn');
+        if (!btn) return;
+        const mobile = isMobile();
+        if (_mobileMode !== mobile) {
+            _mobileMode = mobile;
+            _savedX = null;
+            applySavedPosition(btn);
+            return;
+        }
+        if (state.panelOpen) return;
+        clampPosition(btn, true);
+    });
 }
 
 // ── Drag (Desktop + Mobile) ──
@@ -67,7 +140,7 @@ function enableDrag(btn) {
 
             // User repositioned manually; drop saved position so we don't
             // snap back to the pre-open spot on panel close.
-            _savedLeft = null;
+            _savedX = null;
 
             if (isMobile()) {
                 const rect = btn.getBoundingClientRect();
@@ -80,6 +153,8 @@ function enableDrag(btn) {
                     btn.style.left = '8px';
                 }
             }
+            const finalRect = btn.getBoundingClientRect();
+            persistPosition(finalRect.left, finalRect.top);
         }
     }
 
@@ -109,13 +184,16 @@ function adjustButtonForPanel(opening) {
         const panelWidth = panel.offsetWidth || 380;
         const btnRect = btn.getBoundingClientRect();
         if (btnRect.left < panelWidth) {
-            _savedLeft = btn.style.left || '';
+            _savedX = btn.offsetLeft;
             btn.style.left = (panelWidth + PANEL_GAP) + 'px';
             btn.style.right = 'auto';
         }
-    } else if (_savedLeft !== null) {
-        btn.style.left = _savedLeft;
-        _savedLeft = null;
+    } else if (_savedX !== null) {
+        const maxX = Math.max(0, window.innerWidth - btn.offsetWidth);
+        const targetX = Math.max(0, Math.min(_savedX, maxX));
+        btn.style.left = `${targetX}px`;
+        btn.style.right = 'auto';
+        _savedX = null;
     }
 }
 
@@ -125,18 +203,37 @@ export function togglePanel() {
     if (state.panelOpen) { closePanel(); return; }
     state.panelOpen = true;
     const panel = document.getElementById('env_tracker_panel');
-    if (panel) panel.classList.add('env-panel--open');
+    if (panel) {
+        panel.inert = false;
+        panel.classList.add('env-panel--open');
+        panel.setAttribute('aria-hidden', 'false');
+    }
     const btn = document.getElementById('env_trigger_btn');
-    if (btn) btn.classList.add('env-trigger--active');
+    if (btn) {
+        btn.classList.add('env-trigger--active');
+        btn.setAttribute('aria-expanded', 'true');
+        btn.setAttribute('aria-label', t('trigger.close'));
+    }
     adjustButtonForPanel(true);
+    _renderPanel?.();
+    panel?.querySelector('.env-panel__close')?.focus();
 }
 
-export function closePanel() {
+export function closePanel(restoreFocus = true) {
     state.panelOpen = false;
     const panel = document.getElementById('env_tracker_panel');
-    if (panel) panel.classList.remove('env-panel--open');
     const btn = document.getElementById('env_trigger_btn');
-    if (btn) btn.classList.remove('env-trigger--active');
+    if (restoreFocus) btn?.focus();
+    if (panel) {
+        panel.classList.remove('env-panel--open');
+        panel.setAttribute('aria-hidden', 'true');
+        panel.inert = true;
+    }
+    if (btn) {
+        btn.classList.remove('env-trigger--active');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-label', t('trigger.open'));
+    }
     adjustButtonForPanel(false);
     clearWIHighlights();
 }
@@ -153,14 +250,16 @@ export function clearWIHighlights() {
 function createTriggerButton() {
     if (document.getElementById('env_trigger_btn')) return;
 
-    const btn = document.createElement('div');
+    const btn = document.createElement('button');
     btn.id = 'env_trigger_btn';
     btn.className = 'env-trigger';
-    btn.title = '⊹ ACE ENTRY TRACK ⊹';
+    btn.type = 'button';
+    btn.title = t('trigger.open');
     btn.innerHTML = ICONS.tracker;
     btn.setAttribute('data-env-badge', '0');
-    btn.setAttribute('role', 'button');
-    btn.setAttribute('tabindex', '0');
+    btn.setAttribute('aria-label', t('trigger.open'));
+    btn.setAttribute('aria-controls', 'env_tracker_panel');
+    btn.setAttribute('aria-expanded', 'false');
 
     btn.addEventListener('click', (e) => {
         if (btn._justDragged) { btn._justDragged = false; return; }
@@ -168,14 +267,8 @@ function createTriggerButton() {
         togglePanel();
     });
 
-    btn.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            togglePanel();
-        }
-    });
-
     document.body.appendChild(btn);
+    applySavedPosition(btn);
     enableDrag(btn);
 }
 
@@ -190,13 +283,19 @@ export function updateBadge() {
     const filtered = monitored.length > 0
         ? state.currentEntries.filter(e => monitored.includes(e.world))
         : state.currentEntries;
+    const filteredKeys = new Set(filtered.map(entry => `${entry.world}::${entry.uid}`));
+    const newCount = [...state.newUids].filter(key => filteredKeys.has(key)).length;
+    const removedCount = monitored.length > 0
+        ? state.removedEntries.filter(entry => monitored.includes(entry.world)).length
+        : state.removedEntries.length;
 
     btn.setAttribute('data-env-badge', String(filtered.length));
 
-    let tip = `⊹ ACE ENTRY TRACK ⊹ — ${filtered.length} entries`;
-    if (state.newUids.size > 0) tip += ` (+${state.newUids.size} new)`;
-    if (state.removedEntries.length > 0) tip += ` (−${state.removedEntries.length} removed)`;
+    let tip = t('trigger.summary', { count: filtered.length });
+    if (newCount > 0) tip += t('trigger.new', { count: newCount });
+    if (removedCount > 0) tip += t('trigger.removed', { count: removedCount });
     btn.title = tip;
+    btn.setAttribute('aria-label', `${state.panelOpen ? t('trigger.close') : t('trigger.open')}. ${tip}`);
 }
 
 // ── Visibility ──

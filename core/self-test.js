@@ -1,13 +1,13 @@
 // ⊹ ACE ENTRY TRACK ⊹ — core/self-test.js
-// Compares our matcher against ST's actual activation, reports accuracy.
+// Measures how much of ST's native activation list has a useful explanation.
 
 import { entryKey } from '../utils/ids.js';
 
 // ── Categories ──
-//   MATCH      — key match reproduced
-//   EXPLAINED  — mechanism (constant / vector / forced / sticky / suppressed)
-//   RECURSIVE  — explained by recursive scan into other entries' content
-//   UNRESOLVED — ST activated it, we couldn't reproduce
+//   MATCH      — key found in reconstructed context
+//   EXPLAINED  — confirmed configuration or live sticky state explains it
+//   RECURSIVE  — possible recursive explanation from final active content
+//   UNRESOLVED — confirmed active, explanation unavailable
 const Category = {
     MATCH: 'match',
     EXPLAINED: 'explained',
@@ -17,22 +17,22 @@ const Category = {
 
 /**
  * Score processed entries (post processEntry + resolveRecursiveMatches).
- * @returns {{ total, match, explained, recursive, unresolved, accuracy, perEntry }}
+ * @returns {{ total, match, explained, recursive, unresolved, coverage, perEntry: Map<string, string> }}
  */
-export function evaluateAccuracy(processedEntries) {
-    const perEntry = [];
+export function evaluateExplanationCoverage(processedEntries) {
+    const perEntry = new Map();
     let match = 0, explained = 0, recursive = 0, unresolved = 0;
 
     for (const entry of processedEntries) {
         const mk = entry.matchedKeys;
         if (!mk) {
             unresolved++;
-            perEntry.push({ uid: entryKey(entry), category: Category.UNRESOLVED });
+            perEntry.set(entryKey(entry), Category.UNRESOLVED);
             continue;
         }
 
         const category = categorize(entry, mk);
-        perEntry.push({ uid: entryKey(entry), category });
+        perEntry.set(entryKey(entry), category);
 
         switch (category) {
             case Category.MATCH:      match++;      break;
@@ -44,22 +44,21 @@ export function evaluateAccuracy(processedEntries) {
 
     const total = processedEntries.length;
     const reproduced = match + explained + recursive;
-    const accuracy = total > 0 ? Math.round((reproduced / total) * 100) : 100;
+    const coverage = total > 0 ? Math.round((reproduced / total) * 100) : 100;
 
-    return { total, match, explained, recursive, unresolved, accuracy, perEntry };
+    return { total, match, explained, recursive, unresolved, coverage, perEntry };
 }
 
 function categorize(entry, mk) {
-    const mechanismTypes = ['constant', 'vector', 'forced', 'suppressed'];
-    if (mechanismTypes.includes(entry.triggerType)) return Category.EXPLAINED;
+    if (entry.triggerType === 'constant' || entry.triggerType === 'forced') return Category.EXPLAINED;
+    if (entry.triggerType === 'vector') return Category.UNRESOLVED;
 
     if (mk.primary.length > 0 || mk.secondary.length > 0) {
         const fromRecurse = [...mk.primary, ...mk.secondary].every(m => m.source === 'recurse');
         return fromRecurse ? Category.RECURSIVE : Category.MATCH;
     }
 
-    if (entry.triggerType === 'sticky') return Category.EXPLAINED;
-    if (mk.reason && mk.reason.includes('recursive scan')) return Category.RECURSIVE;
+    if (entry.triggerType === 'sticky' && entry.stickyRemaining !== null) return Category.EXPLAINED;
 
     return Category.UNRESOLVED;
 }

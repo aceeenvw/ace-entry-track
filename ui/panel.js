@@ -6,11 +6,12 @@
 import { ICONS } from '../icons.js';
 import { escapeHtml } from '../utils/html.js';
 import { entryKey } from '../utils/ids.js';
-import { state, sortEntries, cycleSortBy, toggleSortOrder, applyFilters, computeBudgetOverflow, getActivationHistory } from '../core/state.js';
+import { state, sortEntries, cycleSortBy, toggleSortOrder, applyFilters, getActivationHistory } from '../core/state.js';
 import { TRIGGER_TYPES, SOURCE_COLORS, SORT_OPTIONS, POSITION_NAMES, ROLE_NAMES, LOGIC_NAMES } from '../core/processor.js';
 import { closePanel } from './trigger-button.js';
-import { resolveKeyMacros, parseRegexKey, buildAllSources, getWIGlobalSettings } from '../core/matching.js';
+import { createMatchingContext, ensurePotentialMatches, resolveKeyMacros, parseRegexKey, buildAllSources } from '../core/matching.js';
 import { Category } from '../core/self-test.js';
+import { t } from '../i18n.js';
 
 let _getSettings;
 let _saveFn;
@@ -91,10 +92,13 @@ export function applyPanelLayout(layout) {
 function createPanel() {
     if (document.getElementById('env_tracker_panel')) return;
 
-    const panel = document.createElement('div');
+    const panel = document.createElement('aside');
     panel.id = 'env_tracker_panel';
     panel.className = 'env-panel';
-    panel.innerHTML = '<div class="env-panel__body"><div class="env-panel__empty">Send a message to see active entries</div></div>';
+    panel.setAttribute('aria-label', 'Ace Entry Track');
+    panel.setAttribute('aria-hidden', 'true');
+    panel.inert = true;
+    panel.innerHTML = `<div class="env-panel__body"><div class="env-panel__empty">${t('panel.initial')}</div></div>`;
 
     // ── Click delegation ──
     panel.addEventListener('click', (e) => {
@@ -186,6 +190,7 @@ function createPanel() {
             const section = keysToggle.closest('.env-keys');
             if (section) {
                 const open = section.classList.toggle('env-keys--open');
+                keysToggle.setAttribute('aria-expanded', String(open));
                 const chevron = keysToggle.querySelector('.env-keys-toggle__chevron');
                 if (chevron) chevron.innerHTML = open ? ICONS.chevron_up : ICONS.chevron_down;
             }
@@ -194,7 +199,8 @@ function createPanel() {
 
 
         // Entry expand/collapse — no re-render, just toggle + lazy detail inject.
-        const entryEl = e.target.closest('.env-entry');
+        const entryRow = e.target.closest('.env-entry__row');
+        const entryEl = entryRow?.closest('.env-entry');
         if (!entryEl || entryEl.classList.contains('env-entry--removed')) return;
         const key = entryEl.dataset.key;
         if (!key) return;
@@ -207,12 +213,14 @@ function createPanel() {
             if (!entryEl.querySelector('.env-detail')) {
                 const entryData = state.currentEntries.find(en => entryKey(en) === key);
                 if (entryData) {
+                    ensurePotentialMatches(entryData, createMatchingContext());
                     entryEl.insertAdjacentHTML('beforeend', renderEntryDetail(entryData));
                 }
             }
         }
         const chevron = entryEl.querySelector('.env-entry__chevron');
         if (chevron) chevron.innerHTML = state.expandedUids.has(key) ? ICONS.chevron_up : ICONS.chevron_down;
+        entryRow.setAttribute('aria-expanded', String(state.expandedUids.has(key)));
     });
 
     // ── Cross-highlighting via mouseover/mouseout ──
@@ -264,6 +272,14 @@ function createPanel() {
         }
     });
 
+    panel.addEventListener('keydown', (e) => {
+        const highlight = e.target.closest('.env-highlight');
+        if (highlight && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            highlight.click();
+        }
+    });
+
     document.body.appendChild(panel);
 }
 
@@ -273,6 +289,8 @@ function createTooltip() {
     if (document.getElementById('env_tooltip')) return;
     const tip = document.createElement('div');
     tip.id = 'env_tooltip';
+    tip.setAttribute('role', 'tooltip');
+    tip.setAttribute('aria-hidden', 'true');
     document.body.appendChild(tip);
 }
 
@@ -301,6 +319,7 @@ function showTooltip(mark, keys) {
     }
     tip.innerHTML = html;
     tip.style.display = 'block';
+    tip.setAttribute('aria-hidden', 'false');
 
     // Position below the mark, clamped to viewport.
     const rect = mark.getBoundingClientRect();
@@ -319,13 +338,19 @@ function showTooltip(mark, keys) {
 
 function hideTooltip() {
     const tip = document.getElementById('env_tooltip');
-    if (tip) tip.style.display = 'none';
+    if (tip) {
+        tip.style.display = 'none';
+        tip.setAttribute('aria-hidden', 'true');
+    }
 }
 
 // ── Expand / Collapse All ──
 
 function expandAll() {
-    for (const entry of state.currentEntries) state.expandedUids.add(entryKey(entry));
+    const MAX_EXPANDED_ENTRIES = 200;
+    for (const entry of state.currentEntries.slice(0, MAX_EXPANDED_ENTRIES)) {
+        state.expandedUids.add(entryKey(entry));
+    }
 }
 function collapseAll() {
     state.expandedUids.clear();
@@ -419,36 +444,59 @@ function clearAccentedEntries() {
 
 // ── Context Preview ──
 
-function buildContextPreview(entries) {
-    const allSources = buildAllSources();
-    if (allSources.length === 0) return '<span class="env-ctx__empty">No scannable context available</span>';
+function buildContextPreview(entries, matchingContext = createMatchingContext()) {
+    const allSources = buildAllSources(matchingContext);
+    if (allSources.length === 0) return `<span class="env-ctx__empty">${t('context.none')}</span>`;
+
+    const MAX_CONTEXT_ENTRIES = 500;
+    const MAX_KEY_REFS = 4096;
+    const MAX_SOURCE_KEY_REFS = 512;
+    const previewEntries = entries.slice(0, MAX_CONTEXT_ENTRIES);
 
     // ref = composite world::uid (bare uid collides across books).
-    const keyEntryMap = [];
-    const potentialKeyMap = [];
+    const keyRefsBySource = new Map();
+    const getSourceRefs = (source) => {
+        if (!keyRefsBySource.has(source)) keyRefsBySource.set(source, { actual: [], potential: [] });
+        return keyRefsBySource.get(source);
+    };
+    let actualRefCount = 0;
+    let potentialRefCount = 0;
 
-    for (const entry of entries) {
+    for (const entry of previewEntries) {
         const mk = entry.matchedKeys;
         if (!mk) continue;
         const tt = TRIGGER_TYPES[entry.triggerType] || TRIGGER_TYPES.normal;
         const ref = entryKey(entry);
         for (const m of [...(mk.primary || []), ...(mk.secondary || [])]) {
-            keyEntryMap.push({ key: m.key, ref, color: tt.color, title: entry.title, source: m.source });
+            if (actualRefCount >= MAX_KEY_REFS) break;
+            const sourceRefs = getSourceRefs(m.source).actual;
+            if (sourceRefs.length >= MAX_SOURCE_KEY_REFS) continue;
+            sourceRefs.push({ key: m.key, ref, color: tt.color, title: entry.title, source: m.source });
+            actualRefCount++;
         }
+        if (potentialRefCount < MAX_KEY_REFS) ensurePotentialMatches(entry, matchingContext);
         for (const m of (mk.potential || [])) {
-            potentialKeyMap.push({ key: m.key, ref, color: tt.color, title: entry.title, source: m.source });
+            if (potentialRefCount >= MAX_KEY_REFS) break;
+            const sourceRefs = getSourceRefs(m.source).potential;
+            if (sourceRefs.length >= MAX_SOURCE_KEY_REFS) continue;
+            sourceRefs.push({ key: m.key, ref, color: tt.color, title: entry.title, source: m.source });
+            potentialRefCount++;
         }
     }
 
-    const wiSettings = getWIGlobalSettings();
+    const wiSettings = matchingContext.wiSettings;
     const scanDepth = wiSettings.scanDepth || 10;
 
-    let html = '';
+    let html = entries.length > previewEntries.length
+        ? `<div class="env-ctx__limit">${t('context.limit', { count: previewEntries.length })}</div>`
+        : '';
+    const highlightBudget = { totalRemaining: 1000, sourceRemaining: 300 };
 
     for (const src of allSources) {
         const sc = SOURCE_COLORS[src.label] || { color: '#64748b', label: src.label };
-        const keysForSource = keyEntryMap.filter(k => k.source === src.label);
-        const potentialForSource = potentialKeyMap.filter(k => k.source === src.label);
+        const sourceRefs = keyRefsBySource.get(src.label) || { actual: [], potential: [] };
+        const keysForSource = sourceRefs.actual;
+        const potentialForSource = sourceRefs.potential;
         const hitCount = keysForSource.length;
         const potentialCount = potentialForSource.length;
 
@@ -458,33 +506,34 @@ function buildContextPreview(entries) {
         const chevron = isOpen ? ICONS.chevron_up : ICONS.chevron_down;
 
         html += `<div class="env-ctx__section${isOpen ? ' env-ctx__section--open' : ''}">`;
-        html += `<div class="env-ctx__source-header" data-source="${escapeHtml(src.label)}" role="button">`;
+        html += `<button type="button" class="env-ctx__source-header" data-source="${escapeHtml(src.label)}" aria-expanded="${isOpen}">`;
         html += `<span class="env-ctx__source-label" style="--source-color:${sc.color}">${escapeHtml(sc.label)}</span>`;
-        if (hitCount > 0) html += `<span class="env-ctx__source-hits" style="color:${sc.color}">${hitCount} hit${hitCount !== 1 ? 's' : ''}</span>`;
-        if (potentialCount > 0) html += `<span class="env-ctx__source-potential-count">${potentialCount} potential</span>`;
+        if (hitCount > 0) html += `<span class="env-ctx__source-hits" style="color:${sc.color}">${t('context.hits', { count: hitCount, suffix: hitCount !== 1 ? 's' : '' })}</span>`;
+        if (potentialCount > 0) html += `<span class="env-ctx__source-potential-count">${t('context.potential', { count: potentialCount })}</span>`;
         html += `<span class="env-ctx__source-chevron">${chevron}</span>`;
-        html += `</div>`;
+        html += `</button>`;
 
         if (isOpen) {
+            highlightBudget.sourceRemaining = 300;
             html += `<div class="env-ctx__source-body">`;
             if (src.label === 'chat') {
                 const ctx = SillyTavern.getContext();
                 const chat = ctx.chat || [];
                 const recent = chat.slice(-scanDepth);
                 if (recent.length === 0) {
-                    html += `<span class="env-ctx__empty">No chat messages</span>`;
+                    html += `<span class="env-ctx__empty">${t('context.noChat')}</span>`;
                 } else {
                     // Cap per-message preview for huge messages (RP logs, pasted articles).
                     const MSG_PREVIEW_LEN = 2000;
                     for (const msg of recent) {
-                        const name = msg.name || (msg.is_user ? 'You' : 'AI');
+                        const name = msg.name || (msg.is_user ? t('context.you') : t('context.ai'));
                         const isUser = !!msg.is_user;
                         const nameClass = isUser ? 'env-ctx__name--user' : 'env-ctx__name--char';
                         let body = msg.mes || '';
                         const truncated = body.length > MSG_PREVIEW_LEN;
                         if (truncated) body = body.slice(0, MSG_PREVIEW_LEN);
                         html += `<div class="env-ctx__msg"><span class="env-ctx__name ${nameClass}">${escapeHtml(name)}</span>`;
-                        html += `<span class="env-ctx__text">${highlightTextWithKeys(body, keysForSource, potentialForSource)}${truncated ? '…' : ''}</span></div>`;
+                        html += `<span class="env-ctx__text">${highlightTextWithKeys(body, keysForSource, potentialForSource, matchingContext, highlightBudget)}${truncated ? '…' : ''}</span></div>`;
                     }
                 }
             } else {
@@ -492,12 +541,12 @@ function buildContextPreview(entries) {
                 const CTX_PREVIEW_LEN = 600;
                 if (raw.length > CTX_PREVIEW_LEN) {
                     html += `<div class="env-ctx__block">`;
-                    html += `<span class="env-ctx__preview-text">${highlightTextWithKeys(raw.substring(0, CTX_PREVIEW_LEN), keysForSource, potentialForSource)}…</span>`;
-                    html += `<button class="env-ctx__show-all" data-source="${escapeHtml(src.label)}">Show all (${raw.length} chars)</button>`;
-                    html += `<span class="env-ctx__full-text" style="display:none">${highlightTextWithKeys(raw, keysForSource, potentialForSource)}</span>`;
+                    html += `<span class="env-ctx__preview-text">${highlightTextWithKeys(raw.substring(0, CTX_PREVIEW_LEN), keysForSource, potentialForSource, matchingContext, highlightBudget)}…</span>`;
+                    html += `<button type="button" class="env-ctx__show-all" data-source="${escapeHtml(src.label)}">${t('context.showAll', { count: raw.length })}</button>`;
+                    html += `<span class="env-ctx__full-text" style="display:none">${escapeHtml(raw)}</span>`;
                     html += `</div>`;
                 } else {
-                    html += `<div class="env-ctx__block">${highlightTextWithKeys(raw, keysForSource, potentialForSource)}</div>`;
+                    html += `<div class="env-ctx__block">${highlightTextWithKeys(raw, keysForSource, potentialForSource, matchingContext, highlightBudget)}</div>`;
                 }
             }
             html += `</div>`;
@@ -511,20 +560,31 @@ function buildContextPreview(entries) {
 
 // ── Text Highlighting ──
 
-function highlightTextWithKeys(text, keyEntryMap, potentialKeyMap = []) {
+function highlightTextWithKeys(text, keyEntryMap, potentialKeyMap = [], matchingContext = null, highlightBudget = null) {
     if (!text || (keyEntryMap.length === 0 && potentialKeyMap.length === 0)) return escapeHtml(text);
+    if (highlightBudget && (highlightBudget.totalRemaining <= 0 || highlightBudget.sourceRemaining <= 0)) return escapeHtml(text);
 
     const positions = [];
 
     for (const { key, ref, color, title } of keyEntryMap) {
+        if (highlightBudget && (highlightBudget.totalRemaining <= 0 || highlightBudget.sourceRemaining <= 0)) break;
         findKeyPositions(text, key, (start, end) => {
             positions.push({ start, end, ref, color, title, key, type: 'actual' });
-        });
+            if (!highlightBudget) return true;
+            highlightBudget.totalRemaining--;
+            highlightBudget.sourceRemaining--;
+            return highlightBudget.totalRemaining > 0 && highlightBudget.sourceRemaining > 0;
+        }, matchingContext);
     }
     for (const { key, ref, color, title } of potentialKeyMap) {
+        if (highlightBudget && (highlightBudget.totalRemaining <= 0 || highlightBudget.sourceRemaining <= 0)) break;
         findKeyPositions(text, key, (start, end) => {
             positions.push({ start, end, ref, color, title, key, type: 'potential' });
-        });
+            if (!highlightBudget) return true;
+            highlightBudget.totalRemaining--;
+            highlightBudget.sourceRemaining--;
+            return highlightBudget.totalRemaining > 0 && highlightBudget.sourceRemaining > 0;
+        }, matchingContext);
     }
 
     if (positions.length === 0) return escapeHtml(text);
@@ -562,7 +622,7 @@ function highlightTextWithKeys(text, keyEntryMap, potentialKeyMap = []) {
         const isFiltered = state.highlightKeyFilter && m.keys.includes(state.highlightKeyFilter);
         let hlClass = isPotentialOnly ? 'env-highlight env-highlight--potential' : 'env-highlight';
         if (isFiltered) hlClass += ' env-highlight--filtered';
-        html += `<mark class="${hlClass}" data-keys-refs="${escapeHtml(refsStr)}" data-keys="${escapeHtml(keyStr)}" style="--hl-color:${color}">${escapeHtml(highlighted)}</mark>`;
+        html += `<mark class="${hlClass}" tabindex="0" role="button" aria-label="${escapeHtml(t('highlight.filter', { key: m.keys[0] }))}" data-keys-refs="${escapeHtml(refsStr)}" data-keys="${escapeHtml(keyStr)}" style="--hl-color:${color}">${escapeHtml(highlighted)}</mark>`;
         last = m.end;
     }
     if (last < text.length) html += escapeHtml(text.substring(last));
@@ -570,8 +630,8 @@ function highlightTextWithKeys(text, keyEntryMap, potentialKeyMap = []) {
 }
 
 /** Find all positions of a key (regex or literal) in text. */
-function findKeyPositions(text, key, callback) {
-    const resolvedKey = resolveKeyMacros(key);
+function findKeyPositions(text, key, callback, matchingContext = null) {
+    const resolvedKey = resolveKeyMacros(key, matchingContext);
     if (!resolvedKey || !resolvedKey.trim()) return;
     const trimmed = resolvedKey.trim();
 
@@ -582,7 +642,7 @@ function findKeyPositions(text, key, callback) {
     const MAX_MATCHES = 1000;
     const MAX_ZERO_WIDTH = 50;
 
-    const regexKey = parseRegexKey(trimmed);
+    const regexKey = parseRegexKey(trimmed, matchingContext);
     if (regexKey) {
         try {
             const globalRegex = new RegExp(regexKey.source, regexKey.flags.includes('g') ? regexKey.flags : regexKey.flags + 'g');
@@ -590,7 +650,7 @@ function findKeyPositions(text, key, callback) {
             let count = 0;
             let zeroWidthCount = 0;
             while ((match = globalRegex.exec(text)) !== null) {
-                callback(match.index, match.index + match[0].length);
+                if (callback(match.index, match.index + match[0].length) === false) break;
                 if (match[0].length === 0) {
                     globalRegex.lastIndex++;
                     if (++zeroWidthCount >= MAX_ZERO_WIDTH) break;
@@ -605,7 +665,7 @@ function findKeyPositions(text, key, callback) {
         let idx = 0;
         let count = 0;
         while ((idx = lower.indexOf(needle, idx)) !== -1) {
-            callback(idx, idx + trimmed.length);
+            if (callback(idx, idx + trimmed.length) === false) break;
             // +1 preserves overlapping-match semantics ("aa" in "aaaa" → 3 hits).
             idx += 1;
             if (++count >= MAX_MATCHES) break;
@@ -622,7 +682,7 @@ function renderSparkline(key) {
     for (const active of history) {
         dots += `<span class="env-spark__dot ${active ? 'env-spark__dot--on' : 'env-spark__dot--off'}"></span>`;
     }
-    return `<span class="env-spark" title="Activation history (last ${history.length} gens)">${dots}</span>`;
+    return `<span class="env-spark" title="${t('history.title', { count: history.length })}">${dots}</span>`;
 }
 
 // ── Main Render ──
@@ -637,6 +697,10 @@ export function renderPanel() {
     let entries = monitored.length > 0
         ? state.currentEntries.filter(e => monitored.includes(e.world))
         : state.currentEntries;
+    const totalAll = entries.length;
+    const totalTokens = entries.reduce((sum, entry) => sum + entry.estimatedTokens, 0);
+    const trackedKeys = new Set(entries.map(entryKey));
+    const newCount = [...state.newUids].filter(key => trackedKeys.has(key)).length;
 
     const removed = monitored.length > 0
         ? state.removedEntries.filter(e => monitored.includes(e.world))
@@ -647,12 +711,13 @@ export function renderPanel() {
 
     entries = applyFilters(entries);
 
-    const totalAll = monitored.length > 0
-        ? state.currentEntries.filter(e => monitored.includes(e.world)).length
-        : state.currentEntries.length;
+    let renderMatchingContext = null;
+    const expandedEntries = entries.filter(entry => state.expandedUids.has(entryKey(entry)));
+    if (expandedEntries.length > 0) {
+        renderMatchingContext = createMatchingContext();
+        for (const entry of expandedEntries) ensurePotentialMatches(entry, renderMatchingContext);
+    }
 
-    const totalTokens = entries.reduce((sum, e) => sum + e.estimatedTokens, 0);
-    const budget = settings.tokenBudgetOverride || 0;
     const currentSort = settings.sortBy || 'order';
     const currentDir = settings.sortOrder || 'asc';
     const sortOpt = SORT_OPTIONS[currentSort] || SORT_OPTIONS.order;
@@ -661,28 +726,28 @@ export function renderPanel() {
 
     // Header
     html += `<div class="env-panel__header">`;
-    html += `<span class="env-panel__title">${ICONS.tracker} ENTRY TRACK</span>`;
+    html += `<span class="env-panel__title">${ICONS.tracker} ${t('panel.title')}</span>`;
     html += `<div class="env-panel__header-actions">`;
-    html += `<span class="env-panel__stats">${totalAll} entries · ~${totalTokens} tok</span>`;
-    if (state.newUids.size > 0 || removed.length > 0) {
+    html += `<span class="env-panel__stats" aria-live="polite">${t('panel.stats', { count: totalAll, tokens: totalTokens })}</span>`;
+    if (newCount > 0 || removed.length > 0) {
         html += `<span class="env-diff-summary">`;
-        if (state.newUids.size > 0) html += `<span class="env-diff-new">+${state.newUids.size}</span>`;
+        if (newCount > 0) html += `<span class="env-diff-new">+${newCount}</span>`;
         if (removed.length > 0) html += `<span class="env-diff-removed">−${removed.length}</span>`;
         html += `</span>`;
     }
-    html += `<button class="env-panel__refresh" title="Re-evaluate against current context">${ICONS.refresh}</button>`;
-    html += `<button class="env-panel__close" title="Close panel (Esc)">✕</button>`;
+    html += `<button type="button" class="env-panel__refresh" title="${t('panel.refresh')}" aria-label="${t('panel.refresh')}">${ICONS.refresh}</button>`;
+    html += `<button type="button" class="env-panel__close" title="${t('panel.close')}" aria-label="${t('panel.close')}">✕</button>`;
     html += `</div></div>`;
 
     // Performance warning
     if (state.lastProcessingMs !== null && state.lastProcessingMs > 500) {
-        html += `<div class="env-perf-warning">${ICONS.warning} Processing took ${state.lastProcessingMs}ms — large lorebooks may cause slowdowns</div>`;
+        html += `<div class="env-perf-warning">${ICONS.warning} ${t('panel.slow', { ms: state.lastProcessingMs })}</div>`;
     }
 
     html += `<div class="env-panel__body">`;
 
     if (totalAll === 0 && removed.length === 0) {
-        html += `<div class="env-panel__empty">${ICONS.empty} No active World Info entries yet.<br><small>Send a message to trigger lorebook entries.</small></div>`;
+        html += `<div class="env-panel__empty">${ICONS.empty} ${t('panel.empty')}<br><small>${t('panel.emptyHint')}</small></div>`;
         html += `</div>`;
         panel.innerHTML = html;
         // Drop hover refs — the elements they pointed to were just detached.
@@ -696,59 +761,41 @@ export function renderPanel() {
         return;
     }
 
-    // Sort + budget once; reused below for the overflow set.
-    const allSorted = budget > 0 ? sortEntries(entries, _getSettings) : null;
-    const budgetResult = budget > 0 ? computeBudgetOverflow(allSorted, budget) : null;
-
-    // Budget bar + stacked simulator.
-    if (budget > 0 && budgetResult) {
-        const { withinBudget: budgetIn, overflow: budgetOut, budgetedTokens, bypassTokens } = budgetResult;
-        // OVER decision based on budgeted tokens (bypass is free pass).
-        const overBudget = budgetedTokens > budget;
-        const pct = Math.min(100, Math.round((budgetedTokens / budget) * 100));
-        const barClass = overBudget ? 'env-budget--over' : (pct >= 80 ? 'env-budget--warn' : '');
-
-        html += `<div class="env-budget ${barClass}"><div class="env-budget__label">`;
-        html += `<span>~${budgetedTokens} / ${budget} tok</span>`;
-        if (bypassTokens > 0) html += ` <span class="env-budget__bypass-tokens">+${bypassTokens} bypass</span>`;
-        if (overBudget) html += ` <span class="env-budget__alert">${ICONS.warning} OVER BUDGET</span>`;
-        html += `</div>`;
-
-        const bypassEntries = budgetIn.filter(e => e.ignoreBudget);
-        const budgetedEntries = [...budgetIn.filter(e => !e.ignoreBudget), ...budgetOut];
-
-        if (bypassEntries.length > 0) {
-            html += `<div class="env-budget__bypass-label">Bypass budget: ~${bypassTokens} tok (${bypassEntries.length} entries — included unconditionally, not counted against cap)</div>`;
+    const scan = state.scanSummary;
+    if (scan?.final) {
+        const statusClass = scan.overflowed ? ' env-native-scan--limit' : '';
+        const budgetText = scan.budget === null ? t('scan.budgetUnknown') : t('scan.budget', { count: scan.budget });
+        const statusText = scan.overflowed ? t('scan.limitReached') : t('scan.limitClear');
+        const loopText = t('scan.loops', { count: scan.loopCount, suffix: scan.loopCount === 1 ? '' : 's' });
+        html += `<div class="env-native-scan${statusClass}">`;
+        html += `<span class="env-native-scan__title">${ICONS.budget} ${t('scan.title')}</span>`;
+        html += `<span>${t('scan.active', { count: scan.activeCount })}</span>`;
+        if (state.explanationCoverage) {
+            html += `<span>${t('scan.coverage', { count: state.explanationCoverage.coverage })}</span>`;
         }
-
-        html += `<div class="env-budget__stacked">`;
-        for (const entry of budgetedEntries) {
-            const tt = TRIGGER_TYPES[entry.triggerType] || TRIGGER_TYPES.normal;
-            const segPct = Math.max(1, (entry.estimatedTokens / budget) * 100);
-            const isOver = budgetOut.includes(entry);
-            const segClass = isOver ? 'env-budget__seg--over' : '';
-            const title = `${escapeHtml(entry.title)} — ${entry.estimatedTokens}t`;
-            html += `<div class="env-budget__seg ${segClass}" style="width:${segPct}%;background:${tt.color}" title="${title}"></div>`;
-        }
-        html += `</div>`;
-        html += `<div class="env-budget__track"><div class="env-budget__fill" style="width:${pct}%"></div></div>`;
+        html += `<span>${escapeHtml(loopText)}</span>`;
+        html += `<span>${escapeHtml(budgetText)}</span>`;
+        html += `<span class="env-native-scan__status">${escapeHtml(statusText)}</span>`;
         html += `</div>`;
     }
 
     // Context preview
     const ctxOpen = state.contextPreviewOpen;
     html += `<div class="env-context">`;
-    html += `<button class="env-context-toggle"><span class="env-context-toggle__icon">${ICONS.context}</span><span>Context Preview</span><span class="env-context-toggle__arrow">${ctxOpen ? ICONS.chevron_up : ICONS.chevron_down}</span></button>`;
-    if (ctxOpen) html += `<div class="env-ctx__body">${buildContextPreview(entries)}</div>`;
+    html += `<button type="button" class="env-context-toggle" aria-expanded="${ctxOpen}"><span class="env-context-toggle__icon">${ICONS.context}</span><span>${t('context.title')}</span><span class="env-context-toggle__arrow">${ctxOpen ? ICONS.chevron_up : ICONS.chevron_down}</span></button>`;
+    if (ctxOpen) {
+        renderMatchingContext ||= createMatchingContext();
+        html += `<div class="env-ctx__body">${buildContextPreview(entries, renderMatchingContext)}</div>`;
+    }
     html += `</div>`;
 
     // Toolbar
     html += `<div class="env-toolbar">`;
-    html += `<input class="env-search__input" type="text" placeholder="Filter entries…" value="${escapeHtml(state.searchQuery)}" />`;
-    html += `<button class="env-sort__field" title="Cycle sort field"><span class="env-sort__icon">${sortOpt.icon}</span><span class="env-sort__label">${sortOpt.label}</span></button>`;
-    html += `<button class="env-sort__dir" title="Toggle direction">${currentDir === 'asc' ? ICONS.chevron_up : ICONS.chevron_down}</button>`;
-    html += `<button class="env-toolbar__expand-all" title="Expand all">${ICONS.expand}</button>`;
-    html += `<button class="env-toolbar__collapse-all" title="Collapse all">${ICONS.collapse}</button>`;
+    html += `<input class="env-search__input" type="search" name="ace-entry-search" autocomplete="off" aria-label="${t('search.placeholder')}" placeholder="${t('search.placeholder')}" value="${escapeHtml(state.searchQuery)}" />`;
+    html += `<button type="button" class="env-sort__field" title="${t('sort.cycle')}"><span class="env-sort__icon">${sortOpt.icon}</span><span class="env-sort__label">${t(`sort.${currentSort}`)}</span></button>`;
+    html += `<button type="button" class="env-sort__dir" title="${t('sort.toggle')}" aria-label="${t('sort.toggle')}">${currentDir === 'asc' ? ICONS.chevron_up : ICONS.chevron_down}</button>`;
+    html += `<button type="button" class="env-toolbar__expand-all" title="${t('toolbar.expand')}" aria-label="${t('toolbar.expand')}">${ICONS.expand}</button>`;
+    html += `<button type="button" class="env-toolbar__collapse-all" title="${t('toolbar.collapse')}" aria-label="${t('toolbar.collapse')}">${ICONS.collapse}</button>`;
     html += `</div>`;
 
     // Filter chips
@@ -759,21 +806,14 @@ export function renderPanel() {
         for (const type of presentTypes) {
             const tt = TRIGGER_TYPES[type] || TRIGGER_TYPES.normal;
             const isActive = state.triggerFilter.has(type);
-            html += `<button class="env-filter__chip${isActive ? ' env-filter__chip--active' : ''}" data-trigger="${type}" style="--chip-color:${tt.color}" title="${escapeHtml(tt.desc)}"><span class="env-filter__chip-icon">${tt.icon}</span><span class="env-filter__chip-label">${escapeHtml(tt.label)}</span><span class="env-filter__chip-count">${triggerCounts[type]}</span></button>`;
+            html += `<button type="button" class="env-filter__chip${isActive ? ' env-filter__chip--active' : ''}" data-trigger="${type}" aria-pressed="${isActive}" style="--chip-color:${tt.color}" title="${escapeHtml(tt.desc)}"><span class="env-filter__chip-icon">${tt.icon}</span><span class="env-filter__chip-label">${escapeHtml(tt.label)}</span><span class="env-filter__chip-count">${triggerCounts[type]}</span></button>`;
         }
-        if (hasActiveFilters) html += `<button class="env-filter__clear" title="Clear all filters">✕</button>`;
+        if (hasActiveFilters) html += `<button type="button" class="env-filter__clear" title="${t('filter.clear')}" aria-label="${t('filter.clear')}">✕</button>`;
         html += `</div>`;
     }
 
     if (state.highlightKeyFilter) {
-        html += `<div class="env-key-filter"><span class="env-key-filter__label">Key:</span><span class="env-key-filter__value">${escapeHtml(state.highlightKeyFilter)}</span><button class="env-key-filter__clear" title="Clear key filter">✕</button></div>`;
-    }
-
-    // Composite-key set so multi-book overflows don't collide on bare uid.
-    // Reuses the budgetResult computed above — no second sort/simulate pass.
-    const overflowKeys = new Set();
-    if (budgetResult) {
-        for (const e of budgetResult.overflow) overflowKeys.add(entryKey(e));
+        html += `<div class="env-key-filter"><span class="env-key-filter__label">${t('filter.key')}</span><span class="env-key-filter__value">${escapeHtml(state.highlightKeyFilter)}</span><button type="button" class="env-key-filter__clear" title="${t('filter.clearKey')}" aria-label="${t('filter.clearKey')}">✕</button></div>`;
     }
 
     // Group by world. Null-prototype object so a hostile world name like
@@ -784,10 +824,10 @@ export function renderPanel() {
     for (const [worldName, worldEntries] of Object.entries(grouped)) {
         const worldTokens = worldEntries.reduce((s, e) => s + e.estimatedTokens, 0);
         const sorted = sortEntries(worldEntries, _getSettings);
-        html += `<div class="env-world"><div class="env-world__header"><span class="env-world__name">${escapeHtml(worldName)}</span><span class="env-world__badge">${worldEntries.length} · ~${worldTokens}t</span></div>`;
+        html += `<div class="env-world"><div class="env-world__header"><span class="env-world__name">${escapeHtml(worldName)}</span><span class="env-world__badge">${t('world.summary', { count: worldEntries.length, tokens: worldTokens })}</span></div>`;
         for (const entry of sorted) {
             const key = entryKey(entry);
-            html += renderEntry(entry, state.expandedUids.has(key), state.newUids.has(key) ? 'new' : 'unchanged', overflowKeys.has(key));
+            html += renderEntry(entry, state.expandedUids.has(key), state.newUids.has(key) ? 'new' : 'unchanged');
         }
         html += `</div>`;
     }
@@ -795,7 +835,7 @@ export function renderPanel() {
     if (removed.length > 0) {
         const removedGrouped = Object.create(null);
         for (const entry of removed) { if (!removedGrouped[entry.world]) removedGrouped[entry.world] = []; removedGrouped[entry.world].push(entry); }
-        html += `<div class="env-removed-section"><div class="env-removed-section__header"><span>Removed this generation</span><span class="env-removed-section__count">−${removed.length}</span></div>`;
+        html += `<div class="env-removed-section"><div class="env-removed-section__header"><span>${t('removed.title')}</span><span class="env-removed-section__count">−${removed.length}</span></div>`;
         for (const [, worldEntries] of Object.entries(removedGrouped)) {
             for (const entry of worldEntries) html += renderRemovedEntry(entry);
         }
@@ -803,11 +843,11 @@ export function renderPanel() {
     }
 
     if (entries.length === 0 && totalAll > 0) {
-        html += `<div class="env-panel__empty">No entries match current filters.<br><small>${totalAll} entries hidden.</small></div>`;
+        html += `<div class="env-panel__empty">${t('panel.noFilterResults')}<br><small>${t('panel.hidden', { count: totalAll })}</small></div>`;
     }
 
     if (state.lastProcessingMs !== null) {
-        html += `<div class="env-panel__footer">Processed in ${state.lastProcessingMs}ms</div>`;
+        html += `<div class="env-panel__footer">${t('panel.processed', { ms: state.lastProcessingMs })}</div>`;
     }
 
     html += `</div>`;
@@ -844,73 +884,63 @@ export function renderPanel() {
 function computeWarnings(entry) {
     const w = [];
     if (entry.probability < 100 && !entry.sticky) {
-        w.push(`Probability ${entry.probability}% without sticky — entry may flicker on/off`);
-    }
-    if (entry.group) {
-        const peers = state.currentEntries.filter(e => e.group === entry.group);
-        if (peers.length > 1 && !entry.groupOverride) {
-            const weights = peers.map(e => e.groupWeight || 100);
-            if (new Set(weights).size === 1) {
-                w.push('All group members have equal weight — selection is random');
-            }
-        }
+        w.push(t('warning.probability', { value: entry.probability }));
     }
     if (!entry.constant && !entry.vectorized && entry.scanDepth === 0 && entry.keys.length === 0) {
-        w.push('Scan depth 0 with no keys and not constant/vector — will never activate by key match');
+        w.push(t('warning.noKeys'));
     }
     if (!entry.content || entry.content.trim().length === 0) {
-        w.push('Empty content — entry activated but contributes nothing to prompt');
+        w.push(t('warning.empty'));
     }
     return w;
 }
 
-// ── Self-Test Accuracy Dot ──
+// ── Explanation Coverage Dot ──
 
-const ACCURACY_COLORS = {
+const COVERAGE_COLORS = {
     [Category.MATCH]:      '#10b981',
     [Category.EXPLAINED]:  '#3b82f6',
     [Category.RECURSIVE]:  '#f59e0b',
-    [Category.UNRESOLVED]: '#ef4444',
+    [Category.UNRESOLVED]: '#64748b',
 };
-const ACCURACY_LABELS = {
-    [Category.MATCH]:      'Key match reproduced',
-    [Category.EXPLAINED]:  'Mechanism-driven (constant/vector/forced/sticky)',
-    [Category.RECURSIVE]:  'Explained via recursive scan',
-    [Category.UNRESOLVED]: 'Match not reproduced — accuracy gap',
+const COVERAGE_LABELS = {
+    [Category.MATCH]:      'coverage.match',
+    [Category.EXPLAINED]:  'coverage.explained',
+    [Category.RECURSIVE]:  'coverage.recursive',
+    [Category.UNRESOLVED]: 'coverage.unresolved',
 };
 
-function renderAccuracyDot(key) {
-    if (!state.selfTest?.perEntry) return '';
-    const entry = state.selfTest.perEntry.find(e => e.uid === key);
-    if (!entry) return '';
-    const color = ACCURACY_COLORS[entry.category] || '#64748b';
-    const label = ACCURACY_LABELS[entry.category] || entry.category;
-    return `<span class="env-entry__acc-dot" style="background:${color}" title="${label}"></span>`;
+function renderCoverageDot(key) {
+    if (!state.explanationCoverage?.perEntry) return '';
+    const category = state.explanationCoverage.perEntry.get(key);
+    if (!category) return '';
+    const color = COVERAGE_COLORS[category] || '#64748b';
+    const label = t(COVERAGE_LABELS[category] || category);
+    return `<span class="env-entry__coverage-dot" style="background:${color}" title="${label}"></span>`;
 }
 
 // ── Entry Card ──
 
-function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
+function renderEntry(entry, isOpen, diffStatus) {
     const tt = TRIGGER_TYPES[entry.triggerType] || TRIGGER_TYPES.normal;
     const warnings = computeWarnings(entry);
-    const cls = `env-entry${isOpen ? ' env-entry--open' : ''}${diffStatus === 'new' ? ' env-entry--new' : ''}${isOverflow ? ' env-entry--overflow' : ''}`;
+    const cls = `env-entry${isOpen ? ' env-entry--open' : ''}${diffStatus === 'new' ? ' env-entry--new' : ''}`;
     // data-key uses composite world::uid so every click/hover lookup
     // picks the right entry across multiple attached lorebooks.
     const key = entryKey(entry);
 
     let html = `<div class="${cls}" data-trigger="${entry.triggerType}" data-key="${escapeHtml(key)}" style="--trigger-color:${tt.color}">`;
 
-    html += `<div class="env-entry__row">`;
-    if (diffStatus === 'new') html += `<span class="env-entry__diff-badge">NEW</span>`;
-    if (isOverflow) html += `<span class="env-entry__diff-badge env-entry__diff-badge--overflow">OVER</span>`;
+    html += `<button type="button" class="env-entry__row" aria-expanded="${isOpen}">`;
+    if (diffStatus === 'new') html += `<span class="env-entry__diff-badge">${t('badge.new')}</span>`;
     html += `<span class="env-entry__icon">${tt.icon}</span>`;
     html += `<span class="env-entry__title">${escapeHtml(entry.title)}</span>`;
-    html += renderAccuracyDot(key);
+    html += renderCoverageDot(key);
     if (warnings.length > 0) html += `<span class="env-entry__warn" title="${escapeHtml(warnings.join('; '))}">${ICONS.warning}</span>`;
     html += renderSparkline(key);
     html += `<span class="env-entry__tokens">${entry.estimatedTokens}t</span>`;
     html += `<span class="env-entry__chevron">${isOpen ? ICONS.chevron_up : ICONS.chevron_down}</span>`;
-    html += `</div>`;
+    html += `</button>`;
 
     // Detail rendered on first expand (also lazy-injected by click handler).
     if (isOpen) html += renderEntryDetail(entry);
@@ -924,7 +954,7 @@ function renderEntry(entry, isOpen, diffStatus, isOverflow = false) {
 function renderKeyDropdown(labelText, keys, chipClass) {
     if (!keys || keys.length === 0) return '';
     let html = `<div class="env-detail__section env-detail__section--full env-keys">`;
-    html += `<button class="env-keys-toggle" type="button">`;
+        html += `<button class="env-keys-toggle" type="button" aria-expanded="false">`;
     html += `<span class="env-detail__label">${escapeHtml(labelText)}</span>`;
     html += `<span class="env-keys-toggle__count">${keys.length}</span>`;
     html += `<span class="env-keys-toggle__chevron">${ICONS.chevron_down}</span>`;
@@ -941,22 +971,17 @@ function renderEntryDetail(entry) {
     const posLabel = POSITION_NAMES[entry.position] ?? `pos:${entry.position}`;
 
     let html = `<div class="env-detail">`;
+    html += `<div class="env-detail__section"><span class="env-detail__label">${t('status.native')}</span><span class="env-detail__badge-inline">${t('status.active')}</span></div>`;
     html += `<div class="env-detail__section"><span class="env-detail__badge" style="background:${tt.color}">${tt.label}</span> <span class="env-detail__desc">${tt.desc}</span></div>`;
 
     if (entry.vectorized) {
-        let ragText = 'Vectorized entry';
+        let ragText = t('detail.vectorEnabled');
         if (entry.vectorInfo) {
             ragText += entry.vectorInfo.ragEnabled
-                ? ` · RAG enabled (threshold: ${entry.vectorInfo.threshold}, max: ${entry.vectorInfo.maxEntries})`
-                : ' · RAG disabled in settings';
+                ? ` · ${t('detail.ragEnabled', { threshold: entry.vectorInfo.threshold, max: entry.vectorInfo.maxEntries })}`
+                : ` · ${t('detail.ragDisabled')}`;
         }
-        // Likely RAG activation: vectorized + no key hit.
-        const mk = entry.matchedKeys;
-        const noKeyMatch = mk && mk.primary.length === 0 && mk.secondary.length === 0;
-        if (noKeyMatch && entry.vectorInfo?.ragEnabled) {
-            ragText += ' · <span class="env-detail__badge-inline">ACTIVATED VIA RAG</span>';
-        }
-        html += `<div class="env-detail__section"><span class="env-detail__label">Vector</span><span class="env-detail__value">${ragText}</span></div>`;
+        html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.vector')}</span><span class="env-detail__value">${ragText}</span></div>`;
     }
 
     let posDetail = posLabel;
@@ -965,36 +990,36 @@ function renderEntryDetail(entry) {
     const roleName = ROLE_NAMES[entry.role] || 'System';
     if (entry.role !== 0) posDetail += ` · ${roleName}`;
 
-    html += `<div class="env-detail__section"><span class="env-detail__label">Position</span><span class="env-detail__value">${posDetail}</span></div>`;
-    html += `<div class="env-detail__section"><span class="env-detail__label">Order</span><span class="env-detail__value">${entry.order ?? '—'}</span></div>`;
-    html += `<div class="env-detail__section"><span class="env-detail__label">Size</span><span class="env-detail__value">${entry.charCount} chars · ~${entry.estimatedTokens} tokens${entry.ignoreBudget ? ' · <span class="env-detail__badge-inline">IGNORES BUDGET</span>' : ''}</span></div>`;
+    html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.position')}</span><span class="env-detail__value">${posDetail}</span></div>`;
+    html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.order')}</span><span class="env-detail__value">${entry.order ?? '—'}</span></div>`;
+    html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.size')}</span><span class="env-detail__value">${t('detail.sizeValue', { chars: entry.charCount, tokens: entry.estimatedTokens })}${entry.ignoreBudget ? ` · <span class="env-detail__badge-inline">${t('detail.ignoresBudget')}</span>` : ''}</span></div>`;
 
     // Timed-effect rows grouped in one accent block, separate from base
     // metadata. Rendered only when at least one applies.
     let timed = '';
     if (entry.sticky) {
-        let stickyText = `${entry.sticky} turn duration`;
-        if (entry.stickyRemaining !== null) stickyText += ` · <span class="env-detail__badge-inline">${entry.stickyRemaining} remaining</span>`;
-        timed += `<div class="env-detail__section"><span class="env-detail__label">Sticky</span><span class="env-detail__value">${stickyText}</span></div>`;
+        let stickyText = t('detail.stickyValue', { count: entry.sticky });
+        if (entry.stickyRemaining !== null) stickyText += ` · <span class="env-detail__badge-inline">${t('detail.remaining', { count: entry.stickyRemaining })}</span>`;
+        timed += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.sticky')}</span><span class="env-detail__value">${stickyText}</span></div>`;
     }
     if (entry.cooldown) {
-        let cdText = `${entry.cooldown} turn cooldown`;
-        if (entry.cooldownRemaining !== null) cdText += ` · <span class="env-detail__badge-inline">${entry.cooldownRemaining} remaining</span>`;
-        timed += `<div class="env-detail__section"><span class="env-detail__label">Cooldown</span><span class="env-detail__value">${cdText}</span></div>`;
+        let cdText = t('detail.cooldownValue', { count: entry.cooldown });
+        if (entry.cooldownRemaining !== null) cdText += ` · <span class="env-detail__badge-inline">${t('detail.remaining', { count: entry.cooldownRemaining })}</span>`;
+        timed += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.cooldown')}</span><span class="env-detail__value">${cdText}</span></div>`;
     }
-    if (entry.delay) timed += `<div class="env-detail__section"><span class="env-detail__label">Delay</span><span class="env-detail__value">${entry.delay} turn delay before activation</span></div>`;
-    if (entry.probability < 100) timed += `<div class="env-detail__section"><span class="env-detail__label">Probability</span><span class="env-detail__value">${entry.probability}%</span></div>`;
+    if (entry.delay) timed += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.delay')}</span><span class="env-detail__value">${t('detail.delayValue', { count: entry.delay })}</span></div>`;
+    if (entry.probability < 100) timed += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.probability')}</span><span class="env-detail__value">${entry.probability}%</span></div>`;
     if (timed) html += `<div class="env-detail__group">${timed}</div>`;
     if (entry.group) {
-        html += `<div class="env-detail__section"><span class="env-detail__label">Group</span><span class="env-detail__value">${escapeHtml(entry.group)}${entry.groupWeight ? ` (weight: ${entry.groupWeight})` : ''}${entry.groupOverride ? ' · <span class="env-detail__badge-inline">PRIORITY</span>' : ''}</span></div>`;
+        html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.group')}</span><span class="env-detail__value">${escapeHtml(entry.group)}${entry.groupWeight ? ` (${t('detail.weight', { count: entry.groupWeight })})` : ''}${entry.groupOverride ? ` · <span class="env-detail__badge-inline">${t('detail.priority')}</span>` : ''}</span></div>`;
         // Composite world::uid identity — bare uid collides across books
         // (entry's own card hidden, real same-uid peer in another book missed).
         const ownKey = entryKey(entry);
-        const groupPeers = state.currentEntries.filter(e => e.group === entry.group && entryKey(e) !== ownKey);
+        const groupPeers = (state.groupMetadata.get(entry.group) || []).filter(e => entryKey(e) !== ownKey);
         if (groupPeers.length > 0) {
-            html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Group members</span><div class="env-group-peers">`;
+            html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">${t('detail.groupMembers')}</span><div class="env-group-peers">`;
             for (const peer of groupPeers) {
-                html += `<span class="env-group-peer"><span class="env-group-peer__name">${escapeHtml(peer.title)}</span><span class="env-group-peer__weight">w:${peer.groupWeight || 100}</span></span>`;
+                html += `<span class="env-group-peer"><span class="env-group-peer__name">${escapeHtml(peer.title)}</span><span class="env-group-peer__weight">${t('detail.weightShort', { count: peer.groupWeight || 100 })}</span></span>`;
             }
             html += `</div></div>`;
         }
@@ -1002,23 +1027,23 @@ function renderEntryDetail(entry) {
 
     // Selective logic + evaluation.
     if (entry.selectiveLogic !== undefined) {
-        html += `<div class="env-detail__section"><span class="env-detail__label">Logic</span><span class="env-detail__value">${LOGIC_NAMES[entry.selectiveLogic] || entry.selectiveLogic}</span></div>`;
+        html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.logic')}</span><span class="env-detail__value">${LOGIC_NAMES[entry.selectiveLogic] || entry.selectiveLogic}</span></div>`;
         if (entry.matchedKeys?.logicResult) {
             const lr = entry.matchedKeys.logicResult;
             const statusClass = lr.satisfied ? 'env-logic--satisfied' : 'env-logic--unsatisfied';
             const statusIcon = lr.satisfied ? '✓' : '✗';
             html += `<div class="env-detail__section env-detail__section--full">`;
-            html += `<span class="env-detail__label">Evaluation</span>`;
+            html += `<span class="env-detail__label">${t('detail.reconstructedLogic')}</span>`;
             html += `<span class="env-logic-status ${statusClass}"><span class="env-logic-status__icon">${statusIcon}</span> ${escapeHtml(lr.explanation)}</span>`;
             html += `</div>`;
         }
     }
 
     const recursionFlags = [];
-    if (entry.preventRecursion) recursionFlags.push('Prevent');
-    if (entry.excludeRecursion) recursionFlags.push('Exclude');
-    if (entry.delayUntilRecursion) recursionFlags.push(`Delay level ${entry.delayUntilRecursion}`);
-    if (recursionFlags.length > 0) html += `<div class="env-detail__section"><span class="env-detail__label">Recursion</span><span class="env-detail__value">${recursionFlags.join(', ')}</span></div>`;
+    if (entry.preventRecursion) recursionFlags.push(t('detail.recursePrevent'));
+    if (entry.excludeRecursion) recursionFlags.push(t('detail.recurseExclude'));
+    if (entry.delayUntilRecursion) recursionFlags.push(t('detail.recurseDelay', { count: entry.delayUntilRecursion }));
+    if (recursionFlags.length > 0) html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.recursion')}</span><span class="env-detail__value">${recursionFlags.join(', ')}</span></div>`;
 
     if (entry.characterFilter) {
         const cf = entry.characterFilter;
@@ -1026,18 +1051,18 @@ function renderEntryDetail(entry) {
         const tags = cf.tags || [];
         const parts = [...names.map(n => escapeHtml(n)), ...tags.map(t => `#${escapeHtml(t)}`)];
         if (parts.length > 0) {
-            const mode = cf.isExclude ? 'Exclude' : 'Only';
-            html += `<div class="env-detail__section"><span class="env-detail__label">Char filter</span><span class="env-detail__value">${mode}: ${parts.join(', ')}</span></div>`;
+            const mode = cf.isExclude ? t('detail.filterExclude') : t('detail.filterOnly');
+            html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.charFilter')}</span><span class="env-detail__value">${mode}: ${parts.join(', ')}</span></div>`;
         }
     }
 
     if (entry.triggers && entry.triggers.length > 0) {
-        html += `<div class="env-detail__section"><span class="env-detail__label">Triggers</span><span class="env-detail__value">${entry.triggers.map(t => escapeHtml(t)).join(', ')}</span></div>`;
+        html += `<div class="env-detail__section"><span class="env-detail__label">${t('detail.triggers')}</span><span class="env-detail__value">${entry.triggers.map(trigger => escapeHtml(trigger)).join(', ')}</span></div>`;
     }
 
     const warnings = computeWarnings(entry);
     if (warnings.length > 0) {
-        html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Warnings</span><div class="env-detail__warnings">`;
+        html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">${t('detail.warnings')}</span><div class="env-detail__warnings">`;
         for (const w of warnings) html += `<div class="env-detail__warning">${ICONS.warning} ${escapeHtml(w)}</div>`;
         html += `</div></div>`;
     }
@@ -1076,7 +1101,7 @@ function renderEntryDetail(entry) {
         );
 
         if (relevantSources.length > 0) {
-            html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Source scan</span><div class="env-source-grid">`;
+            html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">${t('detail.sourceScan')}</span><div class="env-source-grid">`;
             for (const srcLabel of relevantSources) {
                 const sc = SOURCE_COLORS[srcLabel] || { color: '#64748b', label: srcLabel };
                 const isScanning = !!scanFlagMap[srcLabel];
@@ -1090,20 +1115,20 @@ function renderEntryDetail(entry) {
                 html += `<span class="env-source-grid__label" style="--source-color:${sc.color}">${escapeHtml(sc.label)}</span>`;
                 html += `<div class="env-source-grid__keys">`;
                 for (const k of actual) html += `<span class="env-key env-key--matched" style="--match-color:${sc.color}">${escapeHtml(k)}</span>`;
-                for (const k of potential) html += `<span class="env-key env-key--potential" title="Key found but source not scanned">⚠ ${escapeHtml(k)}</span>`;
-                if (actual.length === 0 && potential.length === 0 && isScanning) html += `<span class="env-source-grid__none">no keys found</span>`;
+                for (const k of potential) html += `<span class="env-key env-key--potential" title="${t('detail.potentialTitle')}">⚠ ${escapeHtml(k)}</span>`;
+                if (actual.length === 0 && potential.length === 0 && isScanning) html += `<span class="env-source-grid__none">${t('detail.noKeys')}</span>`;
                 html += `</div></div>`;
             }
             html += `</div></div>`;
         }
     }
 
-    html += renderKeyDropdown('Primary keys', entry.keys, '');
-    html += renderKeyDropdown('Secondary keys', entry.secondaryKeys, 'env-key--secondary');
+    html += renderKeyDropdown(t('detail.primaryKeys'), entry.keys, '');
+    html += renderKeyDropdown(t('detail.secondaryKeys'), entry.secondaryKeys, 'env-key--secondary');
 
     if (entry.matchedKeys) {
         const mk = entry.matchedKeys;
-        if (mk.reason) html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Activation</span><span class="env-detail__match-reason">${escapeHtml(mk.reason)}</span></div>`;
+        if (mk.reason) html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">${t('detail.explanation')}</span><span class="env-detail__match-reason">${escapeHtml(mk.reason)}</span></div>`;
 
         if (mk.matchStrength && (mk.matchStrength.primaryTotal > 0 || mk.matchStrength.secondaryTotal > 0)) {
             const ms = mk.matchStrength;
@@ -1111,7 +1136,7 @@ function renderEntryDetail(entry) {
             const hits = ms.primaryHit + ms.secondaryHit;
             const pct = total > 0 ? Math.round((hits / total) * 100) : 0;
             const barColor = pct >= 80 ? '#10b981' : (pct >= 40 ? '#f59e0b' : '#ef4444');
-            html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Match strength</span><div class="env-match-strength"><div class="env-match-strength__bar"><div class="env-match-strength__fill" style="width:${pct}%;background:${barColor}"></div></div><span class="env-match-strength__label">${hits}/${total} keys · ${ms.sourceCount} src</span></div></div>`;
+            html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">${t('detail.keyCoverage')}</span><div class="env-match-strength"><div class="env-match-strength__bar"><div class="env-match-strength__fill" style="width:${pct}%;background:${barColor}"></div></div><span class="env-match-strength__label">${t('detail.keyStats', { hits, total, sources: ms.sourceCount })}</span></div></div>`;
         }
     }
 
@@ -1122,10 +1147,10 @@ function renderEntryDetail(entry) {
         const isLong = entry.content.length > CONTENT_PREVIEW_LEN;
         const preview = isLong ? entry.content.substring(0, CONTENT_PREVIEW_LEN) : entry.content;
         const key = entryKey(entry);
-        html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">Content</span>`;
+        html += `<div class="env-detail__section env-detail__section--full"><span class="env-detail__label">${t('detail.content')}</span>`;
         html += `<div class="env-detail__content" data-full-len="${entry.content.length}">`;
         html += `<span class="env-detail__content-text">${escapeHtml(preview)}${isLong ? '…' : ''}</span>`;
-        if (isLong) html += `<button class="env-detail__content-expand" data-key="${escapeHtml(key)}">Show all (${entry.content.length} chars)</button>`;
+        if (isLong) html += `<button type="button" class="env-detail__content-expand" data-key="${escapeHtml(key)}">${t('detail.showAll', { count: entry.content.length })}</button>`;
         html += `</div></div>`;
     }
 
@@ -1136,5 +1161,5 @@ function renderEntryDetail(entry) {
 function renderRemovedEntry(entry) {
     const tt = TRIGGER_TYPES[entry.triggerType] || TRIGGER_TYPES.normal;
     const key = entryKey(entry);
-    return `<div class="env-entry env-entry--removed" data-trigger="${entry.triggerType}" data-key="${escapeHtml(key)}" style="--trigger-color:${tt.color}"><div class="env-entry__row"><span class="env-entry__diff-badge env-entry__diff-badge--removed">OUT</span><span class="env-entry__icon">${tt.icon}</span><span class="env-entry__title">${escapeHtml(entry.title)}</span><span class="env-entry__tokens">${entry.estimatedTokens}t</span></div></div>`;
+    return `<div class="env-entry env-entry--removed" data-trigger="${entry.triggerType}" data-key="${escapeHtml(key)}" style="--trigger-color:${tt.color}"><div class="env-entry__row"><span class="env-entry__diff-badge env-entry__diff-badge--removed">${t('badge.out')}</span><span class="env-entry__icon">${tt.icon}</span><span class="env-entry__title">${escapeHtml(entry.title)}</span><span class="env-entry__tokens">${entry.estimatedTokens}t</span></div></div>`;
 }

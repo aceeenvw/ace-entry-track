@@ -1,5 +1,5 @@
 // ⊹ ACE ENTRY TRACK ⊹ — core/state.js
-// Centralized state: diff, sorting, filtering, budget simulation.
+// Centralized state: diff, sorting, filtering, native scan summary.
 
 import { SORT_OPTIONS } from './processor.js';
 import { entryKey } from '../utils/ids.js';
@@ -24,8 +24,12 @@ export const state = {
     generationCount: 0,
     contextPreviewOpen: false,
     contextSourcesOpen: new Set(),
-    // { total, match, explained, recursive, unresolved, accuracy, perEntry }
-    selfTest: null,
+    // Explanation coverage for the latest native activation list.
+    explanationCoverage: null,
+    // Native WORLDINFO_SCAN_DONE summary for the latest generation.
+    scanSummary: null,
+    // Map<groupName, entry[]> built once per committed result.
+    groupMetadata: new Map(),
 };
 
 // ── Diff ──
@@ -79,6 +83,16 @@ export function computeDiff(newEntries) {
             state.activationHistory.delete(key);
         }
     }
+}
+
+export function computeGroupMetadata(entries) {
+    const groups = new Map();
+    for (const entry of entries) {
+        if (!entry.group) continue;
+        if (!groups.has(entry.group)) groups.set(entry.group, []);
+        groups.get(entry.group).push(entry);
+    }
+    state.groupMetadata = groups;
 }
 
 // ── Sort Logic ──
@@ -157,68 +171,6 @@ export function applyFilters(entries) {
     return filtered;
 }
 
-// ── Budget Simulation ──
-
-/**
- * Simulate ST's insertion order:
- *   1. ignoreBudget entries — included unconditionally, not counted.
- *   2. constants — counted against budget.
- *   3. rest — by sorted order, counted against budget.
- *
- * Returns { withinBudget, overflow, budgetedTokens, bypassTokens, usedTokens }
- * where budgetedTokens is the sum that *counts against the cap* and
- * bypassTokens is the sum of ignoreBudget entries (free pass). usedTokens
- * is the inclusive total for display, but the OVER-BUDGET decision should
- * be based on budgetedTokens vs budget.
- */
-export function computeBudgetOverflow(sortedEntries, budget) {
-    if (!budget || budget <= 0) {
-        const total = sortedEntries.reduce((s, e) => s + e.estimatedTokens, 0);
-        return {
-            withinBudget: sortedEntries,
-            overflow: [],
-            budgetedTokens: total,
-            bypassTokens: 0,
-            usedTokens: total,
-        };
-    }
-
-    const bypassBudget = [];
-    const constants = [];
-    const rest = [];
-
-    for (const entry of sortedEntries) {
-        if (entry.ignoreBudget) bypassBudget.push(entry);
-        else if (entry.constant) constants.push(entry);
-        else rest.push(entry);
-    }
-
-    let running = 0;
-    const withinBudget = [...bypassBudget];
-    const overflow = [];
-
-    for (const entry of constants) {
-        running += entry.estimatedTokens;
-        if (running <= budget) withinBudget.push(entry);
-        else overflow.push(entry);
-    }
-
-    for (const entry of rest) {
-        running += entry.estimatedTokens;
-        if (running <= budget) withinBudget.push(entry);
-        else overflow.push(entry);
-    }
-
-    const bypassTokens = bypassBudget.reduce((s, e) => s + e.estimatedTokens, 0);
-    return {
-        withinBudget,
-        overflow,
-        budgetedTokens: running,
-        bypassTokens,
-        usedTokens: running + bypassTokens,
-    };
-}
-
 // ── Reset ──
 
 export function resetState() {
@@ -236,7 +188,9 @@ export function resetState() {
     state.highlightKeyFilter = null;
     state.contextPreviewOpen = false;
     state.contextSourcesOpen = new Set();
-    state.selfTest = null;
+    state.explanationCoverage = null;
+    state.scanSummary = null;
+    state.groupMetadata = new Map();
 }
 
 /**

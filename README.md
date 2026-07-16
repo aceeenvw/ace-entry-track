@@ -1,10 +1,10 @@
 # ⊹ ACE ENTRY TRACK ⊹
 
 > A World Info / Lorebook tracker for [SillyTavern](https://github.com/SillyTavern/SillyTavern).
-> See **which** entries fire, **why** they fired, and **how** your token budget is spent — in a compact side panel with inline context preview.
+> See which entries SillyTavern confirmed active, alongside clearly labeled reconstructed explanations and native scan facts.
 
 ![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-9333ea)
-![Version](https://img.shields.io/badge/version-2.1.0-3b82f6)
+![Version](https://img.shields.io/badge/version-2.2.0-3b82f6)
 ![Author](https://img.shields.io/badge/author-aceenvw-1f2937)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-10b981)
 
@@ -16,7 +16,7 @@
 - [Trigger reference](#trigger-reference)
 - [Features](#features)
   - [Core tracking](#core-tracking)
-  - [Timed effects & budget](#timed-effects--budget)
+  - [Timed effects & native scan facts](#timed-effects--native-scan-facts)
   - [Context preview](#context-preview)
   - [UI & performance](#ui--performance)
   - [Lorebook discovery](#lorebook-discovery)
@@ -31,7 +31,7 @@
 
 ## What it does
 
-After every generation, ACE ENTRY TRACK reads SillyTavern's World Info pipeline and reconstructs the activation reasoning for each entry, then renders the result as a compact, filterable side panel:
+After every generation, ACE ENTRY TRACK uses SillyTavern's final native World Info activation list, reconstructs explanatory matching details for each confirmed entry, then renders the result as a compact, filterable side panel:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -44,46 +44,45 @@ After every generation, ACE ENTRY TRACK reads SillyTavern's World Info pipeline 
 │   ● ▣ Constant lore — always on            120t      [▾]    │
 │   ● ▣ Sticky scene — 3 turns left          340t      [▾]    │
 │   ● ▣ Key match: "tavern", "ale"           215t      [▾]    │
-│   ◌ ▣ Vector hit (RAG)                     180t      [▾]    │
+│   ◌ ▣ Vector-enabled entry                 180t      [▾]    │
 ├─────────────────────────────────────────────────────────────┤
-│  Budget: ████████░░░░░░░░ 1,847 / 4,096   [bypass: 320]     │
+│  Native scan · 14 active · budget 4,096 · limit not reached │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 The panel shows you, per entry:
-- The **trigger type** (color-coded) and **why** it activated.
-- A **match strength bar** (primary + secondary keys hit vs. total).
-- The **scan sources** the entry actually searched (chat / description / personality / persona / AN / etc.).
+- The confirmed native activation status and a separate explanation category.
+- A reconstructed key-coverage bar (primary + secondary keys found vs. total).
+- The configured scan sources and reconstructed key findings.
 - **Live timed-effect counters** (sticky / cooldown / delay turns remaining).
 - A 12-generation **sparkline** of activation history.
-- An **accuracy dot** comparing our reconstruction to ST's actual activation.
+- An **explanation coverage dot** showing whether a useful explanation was reconstructed.
 
 ---
 
 ## Trigger reference
 
-Entries are color-coded by activation mechanism. The same colors are used in the panel, the filter chips, and the budget bar.
+Entries are color-coded by configuration or reconstructed explanation category.
 
 | Type           | Color     | Meaning                                                       |
 |----------------|-----------|---------------------------------------------------------------|
-| `CONSTANT`     | `#6366f1` | Always active — no keyword match required                     |
-| `VECTOR`       | `#8b5cf6` | Activated via RAG / vector similarity search                  |
-| `STICKY`       | `#ef4444` | Remains active for **N turns** after triggering               |
-| `FORCED`       | `#f59e0b` | Force-activated by `@@activate` decorator                     |
-| `SUPPRESSED`   | `#64748b` | Blocked by `@@dont_activate` decorator                        |
-| `PERSONA`      | `#d946ef` | Matched keywords inside the user persona                      |
-| `CHARACTER`    | `#f59e0b` | Matched keywords inside the character card                    |
-| `SCENARIO`     | `#84cc16` | Matched keywords inside the scenario text                     |
-| `KEY MATCH`    | `#10b981` | Activated by keyword match in recent chat                     |
+| `CONSTANT`     | `#6366f1` | Confirmed active constant; no keyword required                |
+| `VECTOR-ENABLED` | `#8b5cf6` | Eligible for vector retrieval; source is not exposed        |
+| `STICKY STATE` | `#ef4444` | Live sticky state may explain the confirmed activation        |
+| `FORCED`       | `#f59e0b` | Confirmed active with an `@@activate` decorator               |
+| `PERSONA KEY`  | `#d946ef` | Key found in reconstructed persona context                    |
+| `CHARACTER KEY`| `#f59e0b` | Key found in reconstructed character context                  |
+| `SCENARIO KEY` | `#84cc16` | Key found in reconstructed scenario context                   |
+| `KEY FOUND`    | `#10b981` | Key found in reconstructed scan context                       |
 
-Each row in the panel also shows an **accuracy dot**:
+Each row in the panel also shows an **explanation coverage dot**:
 
 | Dot           | Meaning                                                                     |
 |---------------|-----------------------------------------------------------------------------|
-| **green**     | Reconstruction matches ST's actual activation exactly                       |
-| **blue**      | Reconstruction explains the activation via a known mechanism                |
-| **orange**    | Activation explained via *recursive* match (key found in another entry)     |
-| **gray**      | Unresolved — ST activated this entry for a reason we couldn't reconstruct   |
+| **green**     | A key was found in reconstructed context                                    |
+| **blue**      | Confirmed configuration or live state provides an explanation              |
+| **orange**    | A possible recursive explanation was found                                 |
+| **gray**      | Confirmed active, but no explanation was reconstructed                     |
 
 ---
 
@@ -92,17 +91,17 @@ Each row in the panel also shows an **accuracy dot**:
 ### Core tracking
 
 - **Live entry tracking** — all active World Info entries after each generation, grouped by lorebook.
-- **Trigger classification** — entries color-coded by the 9 types above.
-- **Accurate matching** — per-entry scan flags (chat / description / personality / depth prompt / scenario / creator notes / persona / AN), global WI settings respected, regex keys, macro resolution, recursive-scan fallback.
-- **Self-test accuracy** — compares our match reconstruction against ST's actual activation; reports `%` accuracy per generation and per-entry.
-- **Match strength bar** — visual ratio of primary + secondary keys hit vs. total, across how many sources.
-- **Selective-logic evaluation** — explains `AND_ANY` / `NOT_ALL` / `NOT_ANY` / `AND_ALL` pass/fail with a satisfied/unsatisfied status line.
+- **Explanation classification** — entries color-coded by confirmed configuration or reconstructed explanation category.
+- **Bounded explanatory matching** — per-entry scan flags, global WI settings, regex keys, macro resolution, and a clearly labeled possible-recursion fallback.
+- **Explanation coverage** — reports how many confirmed active entries have a useful configuration, live-state, or reconstructed-key explanation.
+- **Reconstructed key coverage** — visual ratio of primary + secondary keys found vs. total, across how many sources.
+- **Reconstructed selective logic** — evaluates `AND_ANY` / `NOT_ALL` / `NOT_ANY` / `AND_ALL` against the captured context.
 
-### Timed effects & budget
+### Timed effects & native scan facts
 
 - **Live timed-effect state** — reads `chat_metadata.timedWorldInfo`, shows remaining turns for sticky / cooldown / delay.
-- **Stacked budget bar** — every entry rendered as a colored segment; `ignoreBudget` entries shown separately; insertion order mirrors ST's priority (constants first, then the rest).
-- **Overflow warnings** — entries pushed out by the budget cap are tagged `OVER`.
+- **Native scan summary** — shows SillyTavern's active count, loop count, effective budget, and whether the native scan reached its budget limit.
+- **No simulated overflow ordering** — display sorting and search never alter native budget status.
 
 ### Context preview
 
@@ -110,18 +109,22 @@ Each row in the panel also shows an **accuracy dot**:
 - **Bidirectional cross-highlighting** — hover an entry → its keys light up in the preview; hover a highlight → affected entries get accented in both the panel and ST's WI editor.
 - **Click-to-filter** — click a highlighted key in the preview to filter the entry list to entries matching that key.
 - **Potential matches** — keys present in a source the entry does **NOT** scan get a warning highlight, surfacing scan-flag misconfigurations.
+- **Bounded preview output** — entry, key-reference, per-source, and aggregate highlight limits prevent Context Preview from creating unbounded DOM output.
 
 ### UI & performance
 
 - **Two layout modes** — `solid` full-height side panel (default) or a denser `compact` view that trims itself to just the toolbar, filter chips, and entry list. Switch live in settings.
-- **Draggable floating trigger button** — stays where you drop it on desktop; on mobile, snaps to the nearest left/right edge after each drag.
+- **Draggable floating trigger button** — remembers separate desktop and mobile positions, snaps on mobile, and stays reachable after resize or rotation.
 - **Filter chips + search** — filter by trigger type with one click; search across titles / keys / world names.
 - **Collapsible key dropdowns** — Primary / Secondary keys fold away by default in the entry detail; click to reveal.
-- **Expand / collapse all** with lazy detail injection — large lorebooks stay snappy.
+- **Lazy panel rendering** — closed-panel generations update state and the badge without rebuilding panel HTML.
+- **Expand / collapse all** with bounded lazy detail injection.
 - **Sparkline per entry** — last 12 generations' activation history dotted next to the title.
-- **Warnings system** — probability without sticky (flicker risk), empty content, equal-weight group members, and more.
+- **Warnings system** — probability without sticky, empty content, and invalid key-scan configuration.
 - **Reduced-motion aware** — honors the OS "reduce motion" preference.
-- **Mobile-friendly** — responsive panel, touch-optimized drag, pointer-capture events.
+- **Accessible controls** — native buttons, keyboard-operable highlights, expanded states, live status, visible focus, and focus restoration.
+- **English and Russian UI** — locale-aware settings, panel controls, diagnostics, and explanations.
+- **Mobile-friendly** — dynamic viewport sizing, safe-area support, responsive panel, and touch-optimized drag.
 
 ### Lorebook discovery
 
@@ -136,7 +139,7 @@ Each row in the panel also shows an **accuracy dot**:
 2. Go to **Extensions** → **Install Extension**.
 3. Paste the repository URL and click **Install**.
 
-No additional dependencies. The `vectors` extension is *optional* — when present, ACE picks up RAG activations automatically.
+No additional dependencies. The `vectors` extension is optional; ACE reports vector eligibility without claiming an activation source that SillyTavern does not expose.
 
 ---
 
@@ -159,16 +162,11 @@ Found under **Extensions** → **⊹ ACE ENTRY TRACK ⊹**:
 |---------------------------|---------|----------------------------------------------------------------------------|
 | **Enable / Disable**      | on      | Toggle the tracker on or off without uninstalling                          |
 | **Panel layout**          | `solid` | `solid` = full-height side panel. `compact` = narrower, denser layout      |
-| **Token budget override** | `0`     | Custom budget cap. `0` = use lorebook default                              |
 | **Monitored lorebooks**   | empty   | Check specific lorebooks to track. Empty = track every active lorebook     |
 
 ### Console output
 
-The extension stays quiet in the browser console — one line on load and one compact summary per generation (entries · constants · time · accuracy · diff). For full diagnostics, run this in DevTools:
-
-```js
-globalThis.__aet.verbose = true;
-```
+Normal operation produces no console output. Only real warnings and errors use the centralized logger.
 
 ---
 
@@ -182,15 +180,16 @@ ace-entry-track/
 ├── index.js              · entry point, event wiring, settings load
 ├── tracker.js            · activation pipeline orchestrator
 ├── scanner.js            · multi-source lorebook discovery
+├── i18n.js               · English and Russian interface strings
 ├── icons.js              · SVG icon registry
 ├── settings.html         · settings panel template
-├── style.css             · all styling (panel, chips, budget bar, etc.)
+├── style.css             · panel, filters, native scan facts, and detail styling
 │
 ├── core/
-│   ├── state.js          · runtime state, sort/filter, persistence
+│   ├── state.js          · runtime state, diff, sort/filter, group metadata
 │   ├── processor.js      · entry coercion, trigger classification, constants
 │   ├── matching.js       · key matching, scan-flag logic, regex/macro resolution
-│   └── self-test.js      · accuracy reconstruction vs. ST's actual activation
+│   └── self-test.js      · explanation coverage for native active entries
 │
 ├── ui/
 │   ├── panel.js          · main side panel render + interaction
@@ -219,7 +218,7 @@ ace-entry-track/
                             core/matching.js   (resolve keys against scan sources)
                                      │
                                      ▼
-                            core/self-test.js  (compare reconstruction vs. ST activation)
+                            core/self-test.js  (measure explanation coverage)
                                      │
                                      ▼
                             core/state.js      (commit to runtime state)
@@ -228,7 +227,7 @@ ace-entry-track/
                             ui/panel.js        (render side panel)
 ```
 
-`scanner.js` and `tracker.js` are independent peers initialized from `index.js`; tracker reads scanner state through `getScannerState()` and triggers re-discovery via `refreshDiscovery()`. Async activation and discovery are race-protected — late-arriving generation events from a previous turn cannot overwrite the current turn's state.
+`scanner.js` and `tracker.js` are independent peers initialized from `index.js`. Scanner listeners remain attached while disabled and gate their work internally, so re-enabling does not require a reload. Activation analysis is deferred outside SillyTavern's awaited event chain, filtered to monitored books before processing, and run through a bounded worker pool. One matching context is shared per generation, while token and key-processing caches avoid repeating unchanged work. Closed panels skip HTML rebuilding, and stale analysis cannot overwrite a newer generation.
 
 ---
 
@@ -251,12 +250,20 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 
 ## Limitations
 
-- **Character-tag filters are fail-open** — when a constant is restricted by `characterFilter.tags` but the active character or tag map can't be resolved, the entry is shown rather than hidden. A real constant is never dropped; only the clear-cut "tagged / not-tagged" case is filtered.
 - **`auto_update: true`** — the manifest enables auto-updates from the install URL. If you've forked or vendored the extension, change this to `false` in `manifest.json`.
 
 ---
 
 ## Changelog
+
+### 2.2.0 — Native accuracy, performance & interface polish
+- **Accuracy**: SillyTavern's final native activation list is now authoritative. Reconstructed matching is clearly presented as explanation rather than activation proof.
+- **Native facts**: added active count, scan loops, effective budget, and native limit status; removed the simulated budget bar, display-order overflow labels, and token-budget override.
+- **Performance**: activation analysis no longer blocks SillyTavern's awaited generation events; bounded workers, shared matching context, token caching, lazy explanation work, and capped Context Preview output keep large lorebooks responsive.
+- **Lifecycle**: stale work is invalidated on chat/generation changes, disable/re-enable works without reload, and lorebook discovery responds to persona changes.
+- **Interface**: added English and Russian UI, accessible native controls, keyboard states, focus restoration, mobile safe areas, and improved reduced-motion behavior.
+- **Launcher**: desktop now defaults to bottom-left, mobile defaults to top-right, each layout remembers its own dragged position, and panel open/close movement restores smoothly.
+- **Fixes**: corrected filtered entry, token, new-entry, and removed-entry counts; normal operation now keeps the browser console quiet.
 
 ### 2.1.0 — Layout modes, collapsible keys & filter accuracy
 - **Feature**: **Panel layout** setting — choose between `solid` (full-height side panel, default) and `compact`. Compact is narrower (~300px), denser, hides sparklines, and strips the **Context Preview** and **Budget bar** down to header → toolbar → filter chips → entry list. Applied live via a validated `data-env-layout` attribute on the panel root; desktop-only (mobile stays full-width).
@@ -285,7 +292,7 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 - Modular code layout: `core/` (state, processor, matching, self-test), `ui/` (panel, trigger-button, lorebook-list), `utils/` (html, ids, log)
 - Side panel replaces floating popup: persistent close button, refresh button, expand/collapse all, lazy detail injection
 - Context preview with inline highlighting + bidirectional cross-highlighting
-- Self-test accuracy framework and per-entry accuracy dots
+- Explanation-coverage framework and per-entry coverage dots
 - Recursive-match resolution (keys found in other activated entries' content)
 - Potential-match detection (keys present in unscanned sources)
 - Selective-logic evaluation with pass/fail explanation
@@ -297,7 +304,7 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 - Race-condition protection on async activation + discovery
 - Centralized `[ACE]`-prefixed logger
 - Warnings system (probability-without-sticky, empty content, equal group weights)
-- Vector / RAG awareness: reads `extensionSettings.vectors`, badges likely RAG activations
+- Vector / RAG awareness: reads `extensionSettings.vectors` and identifies vector-enabled entries
 - Trust-boundary hardening extended to all new fields
 
 ### 1.0.0
@@ -308,8 +315,7 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 ## License
 
 ACE Entry Track is licensed under the **GNU Affero General Public License v3.0
-(AGPL-3.0)**. See the [`LICENSE`](./LICENSE) file for the full text and
-[`COPYRIGHT`](./COPYRIGHT) for the project copyright notice.
+(AGPL-3.0)**. See the [`LICENSE`](./LICENSE) file for the full text.
 
 Because this is an AGPL-licensed extension, if you run a modified version as
 part of a network-accessible service, you must make the corresponding source

@@ -2,6 +2,8 @@
 // Settings-panel lorebook checkbox list. Uses an injected getter so we
 // don't take a circular import on scanner.js.
 
+import { t } from '../i18n.js';
+
 let _getSettings;
 let _getAvailableLorebooks;   // () => { name: string, source: string }[]
 
@@ -46,7 +48,7 @@ export function populateLorebookList() {
     container.empty();
 
     if (available.length === 0) {
-        container.html('<div class="env-lorebook-empty">No lorebooks discovered yet</div>');
+        container.empty().append($('<div>', { class: 'env-lorebook-empty', text: t('books.empty') }));
         return;
     }
 

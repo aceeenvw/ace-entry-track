@@ -133,50 +133,55 @@
     }
 }
 
-/* ── Trigger Button (FAB) ── */
+/* ── Trigger Button ── */
 .env-trigger {
     position: fixed;
     bottom: 12px;
     left: 12px;
-    width: 40px;
-    height: 40px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--SmartThemeBodyColor);
+    color: var(--SmartThemeBodyColor, #e6e6e6);
     cursor: grab;
     z-index: 9990;
-    border-radius: 50%;
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    opacity: 0.5;
-    transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s, left 0.3s ease;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    opacity: 1;
+    transition: transform 0.18s ease, color 0.18s ease, left 0.3s ease;
     user-select: none;
     padding: 0;
     font: inherit;
+    appearance: none;
 }
 .env-trigger:hover {
-    opacity: 1;
-    transform: scale(1.1);
+    color: var(--SmartThemeQuoteColor, #6aa9ff);
+    transform: scale(1.15);
 }
 .env-trigger--active {
-    opacity: 0.9;
-    border-color: var(--SmartThemeQuoteColor);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--SmartThemeQuoteColor) 30%, transparent), 0 2px 8px rgba(0,0,0,0.2);
+    color: var(--SmartThemeQuoteColor, #6aa9ff);
 }
 .env-trigger:not([data-env-badge="0"])::after {
     content: attr(data-env-badge);
     position: absolute;
-    bottom: -2px;
-    right: -2px;
-    font-size: 10px;
+    right: 0;
+    bottom: 0;
+    min-width: 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    font-size: 8px;
     font-weight: 700;
-    color: var(--SmartThemeBodyColor);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 80%, var(--SmartThemeBodyColor) 20%);
-    line-height: 1;
-    padding: 2px 5px;
-    border-radius: 8px;
+    color: var(--SmartThemeBodyColor, #e6e6e6);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1a1a1a) 78%, var(--SmartThemeBodyColor, #e6e6e6) 22%);
+    line-height: 12px;
+    padding: 0 2px;
+    border-radius: 999px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
     pointer-events: none;
     animation: env-badge-pop 0.3s ease;
 }
@@ -185,12 +190,22 @@
     60% { transform: scale(1.2); }
     100% { transform: scale(1); opacity: 1; }
 }
-.env-trigger svg { width: 20px; height: 20px; vertical-align: middle; }
+.env-trigger svg {
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+    opacity: 0.75;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.55)) drop-shadow(0 1px 1px rgba(0,0,0,0.45));
+    transition: opacity 0.18s ease;
+}
+.env-trigger:hover svg,
+.env-trigger--active svg,
+.env-trigger--dragging svg { opacity: 1; }
 .env-trigger--dragging {
     transition: none !important;
     opacity: 1 !important;
     transform: none !important;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    box-shadow: none;
     cursor: grabbing !important;
 }
 
@@ -1046,9 +1061,11 @@
     .env-panel { width: 100%; }
     .env-trigger {
         bottom: auto; top: calc(36px + env(safe-area-inset-top, 0px)); left: auto; right: calc(8px + env(safe-area-inset-right, 0px));
-        width: 36px; height: 36px;
-        z-index: 99999 !important; opacity: 0.7;
+        width: 38px; height: 38px;
+        z-index: 99999 !important;
     }
+    .env-trigger svg { width: 18px; height: 18px; }
+    .env-trigger:not([data-env-badge="0"])::after { right: 4px; bottom: 4px; }
     .env-trigger.env-trigger--active { opacity: 0; pointer-events: none; }
     .env-filter__chip { min-height: 32px; padding: 4px 8px; font-size: 11px; }
     .env-filter__chip-label,

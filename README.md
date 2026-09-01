@@ -4,28 +4,9 @@
 > See which entries SillyTavern confirmed active, alongside clearly labeled reconstructed explanations and native scan facts.
 
 ![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-9333ea)
-![Version](https://img.shields.io/badge/version-2.2.0-3b82f6)
+![Version](https://img.shields.io/badge/version-2.3.0-3b82f6)
 ![Author](https://img.shields.io/badge/author-aceenvw-1f2937)
-![License](https://img.shields.io/badge/license-AGPL--3.0-10b981)
-
----
-
-## Table of Contents
-
-- [What it does](#what-it-does)
-- [Trigger reference](#trigger-reference)
-- [Features](#features)
-  - [Core tracking](#core-tracking)
-  - [Timed effects & native scan facts](#timed-effects--native-scan-facts)
-  - [Context preview](#context-preview)
-  - [UI & performance](#ui--performance)
-  - [Lorebook discovery](#lorebook-discovery)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Settings](#settings)
-- [Architecture](#architecture)
-- [Security model](#security-model)
-- [Changelog](#changelog)
+![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-10b981)
 
 ---
 
@@ -80,7 +61,7 @@ Each row in the panel also shows an **explanation coverage dot**:
 | Dot           | Meaning                                                                     |
 |---------------|-----------------------------------------------------------------------------|
 | **green**     | A key was found in reconstructed context                                    |
-| **blue**      | Confirmed configuration or live state provides an explanation              |
+| **cyan**      | Confirmed configuration or live state provides an explanation              |
 | **orange**    | A possible recursive explanation was found                                 |
 | **gray**      | Confirmed active, but no explanation was reconstructed                     |
 
@@ -110,6 +91,25 @@ Each row in the panel also shows an **explanation coverage dot**:
 - **Click-to-filter** — click a highlighted key in the preview to filter the entry list to entries matching that key.
 - **Potential matches** — keys present in a source the entry does **NOT** scan get a warning highlight, surfacing scan-flag misconfigurations.
 - **Bounded preview output** — entry, key-reference, per-source, and aggregate highlight limits prevent Context Preview from creating unbounded DOM output.
+
+### Regex checker
+
+- **Keyword-list inspection** — paste plaintext keys and `/pattern/flags` expressions separated by commas or new lines.
+- **Bounded variant previews** — expands supported alternatives, optional fragments, finite repeats, and small character classes. Lookarounds are noted but omitted from previews, and case variants are not generated.
+- **Clear diagnostics** — malformed expressions, unsupported flags, and nested-quantifier safety blocks are separated from valid expressions that cannot be fully enumerated.
+- **Zero-length warnings** — statically flags valid expressions that may match without consuming text and activate unexpectedly.
+- **Copyable output** — copy displayed variants as a comma-separated list, subject to clipboard limits.
+- **Tracker-aligned behavior** — macros resolve before validation, and rejected regex-like keys are identified as plaintext fallbacks used by tracking.
+- **Transient by design** — checker input and results are never added to extension settings or stored between popup sessions.
+
+### Regex constructor
+
+- **Explicit boundaries** — choose Latin `\b` boundaries or Cyrillic `[А-Яа-яЁё]` lookarounds instead of relying on script detection.
+- **Literal-safe conversion** — escapes comma- or newline-separated words and phrases, converts internal whitespace to `\s+`, and emits case-insensitive JavaScript regex literals.
+- **Conservative grouping** — explicit prefix and substantial shared-stem families are compacted without adding forms. Supplied consonant-`y` pairs such as `entry, entries` become `/\bentr(?:y|ies)\b/i`.
+- **Optional English suggestions** — heuristic plural and verb forms plus a small curated irregular list appear unchecked. Only selected forms enter the output.
+- **No silent language guessing** — suggestions never alter the source list, mixed alphabets are rejected, and Russian morphology is not inferred.
+- **Non-destructive output** — the original list stays unchanged and generated expressions can be copied together.
 
 ### UI & performance
 
@@ -162,72 +162,15 @@ Found under **Extensions** → **⊹ ACE ENTRY TRACK ⊹**:
 |---------------------------|---------|----------------------------------------------------------------------------|
 | **Enable / Disable**      | on      | Toggle the tracker on or off without uninstalling                          |
 | **Panel layout**          | `solid` | `solid` = full-height side panel. `compact` = narrower, denser layout      |
+| **Check Regex**           | —       | Open the transient keyword and finite-variant inspector                    |
+| **Construct Regex**       | —       | Convert Latin or Cyrillic words and phrases into regex literals             |
 | **Monitored lorebooks**   | empty   | Check specific lorebooks to track. Empty = track every active lorebook     |
+
+Both tools accept up to 256 items of 512 characters each. CHECK REGEX previews up to 256 variants per expression, 1,024 overall, and eight unique regex expansions per check. Each variant is capped at 4,096 characters and expansion work at 262,144 generated characters. Valid expressions that cannot be finitely previewed are reported as limited. CONSTRUCT REGEX offers up to 64 optional suggestions. The extension does not persist tool input, mode, selections, or output; copied text remains in the system clipboard.
 
 ### Console output
 
 Normal operation produces no console output. Only real warnings and errors use the centralized logger.
-
----
-
-## Architecture
-
-The codebase is split into three concerns: **state/processing** (`core/`), **UI rendering** (`ui/`), and **utilities** (`utils/`). Top-level files wire them together.
-
-```
-ace-entry-track/
-├── manifest.json         · ST extension manifest
-├── index.js              · entry point, event wiring, settings load
-├── tracker.js            · activation pipeline orchestrator
-├── scanner.js            · multi-source lorebook discovery
-├── i18n.js               · English and Russian interface strings
-├── icons.js              · SVG icon registry
-├── settings.html         · settings panel template
-├── style.css             · panel, filters, native scan facts, and detail styling
-│
-├── core/
-│   ├── state.js          · runtime state, diff, sort/filter, group metadata
-│   ├── processor.js      · entry coercion, trigger classification, constants
-│   ├── matching.js       · key matching, scan-flag logic, regex/macro resolution
-│   └── self-test.js      · explanation coverage for native active entries
-│
-├── ui/
-│   ├── panel.js          · main side panel render + interaction
-│   ├── trigger-button.js · draggable floating launcher
-│   └── lorebook-list.js  · settings-page lorebook browser
-│
-└── utils/
-    ├── html.js           · HTML escape, DOM helpers
-    ├── ids.js            · stable composite world::uid identity
-    └── log.js            · centralized [ACE]-prefixed logger
-```
-
-### Data flow
-
-```
-   index.js    bootstraps  ──▶  scanner.js  (lorebook discovery)
-                            └─▶  tracker.js  (event wiring)
-                                     │
-                                     ▼
-                            ST generation event
-                                     │
-                                     ▼
-                            core/processor.js  (coerce + classify entries)
-                                     │
-                                     ▼
-                            core/matching.js   (resolve keys against scan sources)
-                                     │
-                                     ▼
-                            core/self-test.js  (measure explanation coverage)
-                                     │
-                                     ▼
-                            core/state.js      (commit to runtime state)
-                                     │
-                                     ▼
-                            ui/panel.js        (render side panel)
-```
-
-`scanner.js` and `tracker.js` are independent peers initialized from `index.js`. Scanner listeners remain attached while disabled and gate their work internally, so re-enabling does not require a reload. Activation analysis is deferred outside SillyTavern's awaited event chain, filtered to monitored books before processing, and run through a bounded worker pool. One matching context is shared per generation, while token and key-processing caches avoid repeating unchanged work. Closed panels skip HTML rebuilding, and stale analysis cannot overwrite a newer generation.
 
 ---
 
@@ -244,7 +187,9 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 
 **Prototype-pollution protection** — persisted `extension_settings` are loaded through an **allowlist loop** rather than `lodash.merge`, closing the `__proto__` / `constructor` / `prototype` injection vector via stored JSON.
 
-**Bounded CPU/memory** — array and string caps prevent a malicious lorebook with millions of keys or multi-MB key strings from freezing the UI thread. Recurse-buffer text and per-source scan buffers share the same 200KB ceiling for both regex and literal-key paths. Regex keys with nested-quantifier shapes (`(a+)+`, `(.*)+`, `(a{1,5})+`) are rejected at parse time and silently fall through to literal matching, mitigating ReDoS.
+**Bounded CPU/memory** — array, input, output, expansion, and render limits bound work. Recurse-buffer text and per-source scan buffers share the same 200KB ceiling. Risky nested, overlapping, or bounded ambiguous repetition is rejected before production matching.
+
+**Regex-tool isolation** — CHECK REGEX validates with the browser's native JavaScript compiler, then walks bounded parser trees to preview finite variants and detect possible zero-length matches. It never executes pasted expressions against text. The constructor treats every entry as literal text, validates the selected alphabet, escapes regex syntax, and revalidates every generated expression. User-controlled values are inserted through DOM text nodes rather than HTML parsing.
 
 ---
 
@@ -254,75 +199,15 @@ ACE ENTRY TRACK treats every lorebook entry as **untrusted input**. World Info c
 
 ---
 
-## Changelog
-
-### 2.2.0 — Native accuracy, performance & interface polish
-- **Accuracy**: SillyTavern's final native activation list is now authoritative. Reconstructed matching is clearly presented as explanation rather than activation proof.
-- **Native facts**: added active count, scan loops, effective budget, and native limit status; removed the simulated budget bar, display-order overflow labels, and token-budget override.
-- **Performance**: activation analysis no longer blocks SillyTavern's awaited generation events; bounded workers, shared matching context, token caching, lazy explanation work, and capped Context Preview output keep large lorebooks responsive.
-- **Lifecycle**: stale work is invalidated on chat/generation changes, disable/re-enable works without reload, and lorebook discovery responds to persona changes.
-- **Interface**: added English and Russian UI, accessible native controls, keyboard states, focus restoration, mobile safe areas, and improved reduced-motion behavior.
-- **Launcher**: desktop now defaults to bottom-left, mobile defaults to top-right, each layout remembers its own dragged position, and panel open/close movement restores smoothly.
-- **Fixes**: corrected filtered entry, token, new-entry, and removed-entry counts; normal operation now keeps the browser console quiet.
-
-### 2.1.0 — Layout modes, collapsible keys & filter accuracy
-- **Feature**: **Panel layout** setting — choose between `solid` (full-height side panel, default) and `compact`. Compact is narrower (~300px), denser, hides sparklines, and strips the **Context Preview** and **Budget bar** down to header → toolbar → filter chips → entry list. Applied live via a validated `data-env-layout` attribute on the panel root; desktop-only (mobile stays full-width).
-- **Feature**: **Primary** and **Secondary keys** in the expanded entry detail are now collapsed-by-default dropdowns (click the header to expand) — keeps long key lists from dominating the detail view. Applies in both layout modes.
-- **Fix**: constant-merge character filter now honors `characterFilter.tags` (resolved via `tagMap[character.avatar]`), not just `.names` — *fail-open* so a real constant is never hidden on uncertainty.
-- **Fix**: creator-notes scan source falls back to the legacy top-level `creatorcomment` field (`data.creator_notes || creatorcomment`), matching ST, for older character cards.
-- **Polish**: trigger button (FAB) centers its SVG via flexbox; the entry-count badge is now muted to the theme surface instead of bright red.
-- **Polish**: timed-effect rows (sticky / cooldown / delay / probability) are grouped in an accent sub-block in the entry detail, separate from base metadata.
-- **Polish**: panel header shortened to "ENTRY TRACK" with shrink-to-ellipsis so action buttons stay visible on narrow panels.
-- **Polish**: console output is quiet by default — one summary line per generation; `globalThis.__aet.verbose = true` restores full diagnostics.
-- **A11y**: `prefers-reduced-motion` disables the panel slide, badge pop, budget pulse, and new-entry flash.
-
-### 2.0.1 — Audit hardening
-- **Security**: null-prototype objects for entry grouping (blocks lorebooks named `__proto__` / `toString` / `constructor` from bricking the panel render)
-- **Security**: literal-key scan path now shares the same 200KB cap as the regex path (CPU DoS via multi-MB recurse buffer)
-- **Security**: `parseRegexKey` rejects nested-quantifier ReDoS shapes; modern regex flags (`d`, `v`) accepted
-- **Bug**: group-peer filter uses composite `world::uid` (multi-book uid collisions resolved)
-- **Bug**: `setEnabled(false)` now cancels in-flight async work (bumps generation, clears cache, detaches listeners) — toggling off mid-generation no longer leaves stale data on re-enable
-- **Bug**: `mergeMissingConstants` clones raw lorebook entries before mutating `.world` (prevents corrupting ST's shared in-memory representation)
-- **Perf**: `mergeMissingConstants` parallelizes book loads + bounded-concurrency entry processing (was fully sequential)
-- **Perf**: chat-change storms debounce constant-surfacing (was stacking timers); `_lorebookCache` adds LRU + size cap; `activationHistory` adds absolute size ceiling
-- **Polish**: budget bar separates bypass tokens from counted tokens (no more spurious OVER BUDGET); cached sort/budget result on render; tightened uid selector regex; `\x01` stripped from chat messages before scan-buffer joining; cache invalidates on `WORLDINFO_UPDATED`
-- **Cleanup**: dead parameter `onToggleFn` removed from `initTriggerButton`; dead `entry.X !== undefined` guards stripped (always-defined post-`processEntry`); duplicate `CHAT_CHANGED` listener merged
-
-### 2.0.0
-- Modular code layout: `core/` (state, processor, matching, self-test), `ui/` (panel, trigger-button, lorebook-list), `utils/` (html, ids, log)
-- Side panel replaces floating popup: persistent close button, refresh button, expand/collapse all, lazy detail injection
-- Context preview with inline highlighting + bidirectional cross-highlighting
-- Explanation-coverage framework and per-entry coverage dots
-- Recursive-match resolution (keys found in other activated entries' content)
-- Potential-match detection (keys present in unscanned sources)
-- Selective-logic evaluation with pass/fail explanation
-- Match strength bar
-- Live sticky / cooldown / delay remaining turns
-- Stacked budget bar with `ignoreBudget` bypass category
-- Sparkline per entry (last 12 generations)
-- Multi-source scanner: Global, Character primary/additional, Chat, Persona
-- Race-condition protection on async activation + discovery
-- Centralized `[ACE]`-prefixed logger
-- Warnings system (probability-without-sticky, empty content, equal group weights)
-- Vector / RAG awareness: reads `extensionSettings.vectors` and identifies vector-enabled entries
-- Trust-boundary hardening extended to all new fields
-
-### 1.0.0
-- Initial public release with full security hardening
-
----
-
 ## License
 
 ACE Entry Track is licensed under the **GNU Affero General Public License v3.0
-(AGPL-3.0)**. See the [`LICENSE`](./LICENSE) file for the full text.
+(AGPL-3.0-or-later)**. See the [`LICENSE`](./LICENSE) file for the full text.
 
-Because this is an AGPL-licensed extension, if you run a modified version as
-part of a network-accessible service, you must make the corresponding source
-code of your modified version available to its users.
+If you modify the program and let users interact with that modified version remotely over a network, AGPL section 13 requires offering those users the corresponding source.
 
 Copyright (C) 2026 aceenvw
 
 ---
 
-<sub>Author: **aceenvw** · Built for SillyTavern · Licensed under AGPL-3.0</sub>
+<sub>Author: **aceenvw** · Built for SillyTavern · Licensed under AGPL-3.0-or-later</sub>

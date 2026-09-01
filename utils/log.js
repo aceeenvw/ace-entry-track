@@ -12,7 +12,7 @@ try {
     const g = (typeof globalThis !== 'undefined') ? globalThis : window;
     g.__aet = g.__aet || {};
     g.__aet.a = _ns;
-    g.__aet.v = '2.2.0';
+    g.__aet.v = '2.3.0';
 } catch { /* non-fatal */ }
 
 export const log = {

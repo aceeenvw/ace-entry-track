@@ -899,7 +899,7 @@ function computeWarnings(entry) {
 
 const COVERAGE_COLORS = {
     [Category.MATCH]:      '#10b981',
-    [Category.EXPLAINED]:  '#3b82f6',
+    [Category.EXPLAINED]:  '#06b6d4',
     [Category.RECURSIVE]:  '#f59e0b',
     [Category.UNRESOLVED]: '#64748b',
 };

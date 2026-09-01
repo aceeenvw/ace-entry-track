@@ -6,6 +6,8 @@
 import { initScanner, getScannerState, setScannerEnabled } from './scanner.js';
 import { initTracker, refreshTrackerUI, setEnabled as setTrackerEnabled } from './tracker.js';
 import { initLorebookList, populateLorebookList } from './ui/lorebook-list.js';
+import { initRegexChecker } from './ui/regex-checker.js';
+import { initRegexConstructor } from './ui/regex-constructor.js';
 import { applyPanelLayout } from './ui/panel.js';
 import { log } from './utils/log.js';
 import { t } from './i18n.js';
@@ -150,6 +152,8 @@ jQuery(async () => {
 
     loadSettingsUI();
     bindSettingsEvents();
+    initRegexChecker();
+    initRegexConstructor();
 
     initScanner(getSettings, saveSettings);
     initTracker(getSettings, saveSettings);

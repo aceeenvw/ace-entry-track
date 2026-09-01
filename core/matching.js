@@ -5,6 +5,7 @@
 
 import { log } from '../utils/log.js';
 import { t } from '../i18n.js';
+import { diagnoseRegexKey, REGEX_TOOL_LIMITS } from './regex-tools.js';
 
 function setBoundedCache(cache, key, value, maxEntries) {
     if (cache.has(key)) cache.delete(key);
@@ -137,54 +138,24 @@ export function resolveKeyMacros(key, matchingContext = null) {
             }
         }
     } catch { /* non-fatal */ }
-    if (matchingContext?.macroCache) setBoundedCache(matchingContext.macroCache, key, resolved, 4096);
+    if (matchingContext?.macroCache && resolved.length <= 4096) {
+        setBoundedCache(matchingContext.macroCache, key, resolved, 4096);
+    }
     return resolved;
-}
-
-// Reject regex patterns containing a quantified group followed by another
-// quantifier — the classic ReDoS shape (a+)+ / (a*)* / (a{1,5}+)*. Heuristic;
-// rejected patterns silently fall through to literal-key matching at the
-// call site, mirroring parseRegexKey's other failure semantics.
-function _hasNestedQuantifier(pattern) {
-    return /\([^)]*[+*][^)]*\)\s*[+*?{]/.test(pattern)
-        || /\([^)]*\{\d+,?\d*\}[^)]*\)\s*[+*?{]/.test(pattern);
 }
 
 /** Parse a regex key /pattern/flags. Returns null if invalid or ReDoS-shaped. */
 export function parseRegexKey(input, matchingContext = null) {
-    if (matchingContext?.regexCache?.has(input)) return matchingContext.regexCache.get(input);
-    // Modern JS flags incl. d (hasIndices) and v (unicodeSets).
-    const match = input.match(/^\/([\s\S]+?)\/([dgimsuvy]*)$/);
-    if (!match) {
-        if (matchingContext?.regexCache) setBoundedCache(matchingContext.regexCache, input, null, 4096);
-        return null;
-    }
-
-    let [, pattern, flags] = match;
-    if (pattern.match(/(^|[^\\])\//)) {
-        if (matchingContext?.regexCache) setBoundedCache(matchingContext.regexCache, input, null, 4096);
-        return null;
-    }
-    pattern = pattern.replaceAll('\\/', '/');
-    if (_hasNestedQuantifier(pattern)) {
-        if (matchingContext?.regexCache) setBoundedCache(matchingContext.regexCache, input, null, 4096);
-        return null;
-    }
-
-    try {
-        const regex = new RegExp(pattern, flags);
-        if (matchingContext?.regexCache) setBoundedCache(matchingContext.regexCache, input, regex, 4096);
-        return regex;
-    } catch {
-        if (matchingContext?.regexCache) setBoundedCache(matchingContext.regexCache, input, null, 4096);
-        return null;
-    }
+    const cacheable = typeof input === 'string' && input.length <= REGEX_TOOL_LIMITS.maxItemLength;
+    if (cacheable && matchingContext?.regexCache?.has(input)) return matchingContext.regexCache.get(input);
+    const diagnostic = diagnoseRegexKey(input);
+    const regex = diagnostic.status === 'valid' ? diagnostic.regex : null;
+    if (cacheable && matchingContext?.regexCache) setBoundedCache(matchingContext.regexCache, input, regex, 4096);
+    return regex;
 }
 
-// Hard cap on regex input length. Catastrophic-backtracking patterns run
-// O(2^n) over text length; 200KB bounds worst-case hang to milliseconds.
-// The same cap also applies to the literal-key path so a multi-MB
-// recurseText buffer can't freeze the main thread on String.includes().
+// The text cap limits ordinary matching work; risky regex shapes are rejected
+// separately before execution.
 const REGEX_TEXT_CAP = 200_000;
 
 /** Test a single key (regex or literal) against text. */
@@ -217,6 +188,18 @@ export function matchKeyInText(key, text, caseSensitive, matchWholeWords, matchi
     if (matchWholeWords) {
         const words = needle.split(/\s+/);
         if (words.length > 1) return haystack.includes(needle);
+
+        if (needle.length > REGEX_TOOL_LIMITS.maxItemLength) {
+            let index = haystack.indexOf(needle);
+            while (index !== -1) {
+                const end = index + needle.length;
+                const startsAtBoundary = index === 0 || /\W/.test(haystack[index - 1]);
+                const endsAtBoundary = end === haystack.length || /\W/.test(haystack[end]);
+                if (startsAtBoundary && endsAtBoundary) return true;
+                index = haystack.indexOf(needle, index + 1);
+            }
+            return false;
+        }
 
         const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         let regex = matchingContext?.wordRegexCache?.get(needle);

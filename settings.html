@@ -33,6 +33,36 @@
                 </div>
 
                 <div class="env_settings_section">
+                    <h4 class="env_settings_heading" data-env-i18n="settings.regex">Check Regex</h4>
+
+                    <div class="env_set_block env_regex_launcher">
+                        <span class="env_set_text">
+                            <span class="env_set_label" data-env-i18n="settings.regexLabel">Inspect keywords and regex</span>
+                            <span class="env_set_desc" data-env-i18n="settings.regexDesc">Resolve finite variants and find malformed or unsafe expressions.</span>
+                        </span>
+                        <button id="env_open_regex_checker" class="menu_button env_regex_launcher__button" type="button">
+                            <i class="fa-solid fa-code" aria-hidden="true"></i>
+                            <span data-env-i18n="settings.regexOpen">Open checker</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="env_settings_section">
+                    <h4 class="env_settings_heading" data-env-i18n="settings.constructor">Construct Regex</h4>
+
+                    <div class="env_set_block env_regex_launcher">
+                        <span class="env_set_text">
+                            <span class="env_set_label" data-env-i18n="settings.constructorLabel">Convert exact word lists</span>
+                            <span class="env_set_desc" data-env-i18n="settings.constructorDesc">Build safe Latin or Cyrillic regex literals without guessing new forms.</span>
+                        </span>
+                        <button id="env_open_regex_constructor" class="menu_button env_regex_launcher__button" type="button">
+                            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                            <span data-env-i18n="settings.constructorOpen">Open constructor</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="env_settings_section">
                     <h4 class="env_settings_heading" data-env-i18n="settings.tracking">Tracking</h4>
 
                     <div class="env_set_block">

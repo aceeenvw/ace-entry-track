@@ -15,6 +15,17 @@ let _mobileMode = null;
 // Original position before panel-open shift; restored on close.
 let _savedX = null;
 
+function visibleInsets(btn) {
+    const icon = btn.querySelector('svg');
+    const iconWidth = icon?.clientWidth || icon?.getBoundingClientRect().width || 0;
+    const iconHeight = icon?.clientHeight || icon?.getBoundingClientRect().height || 0;
+    const hoverScale = 1.15;
+    return {
+        x: Math.max(0, (btn.offsetWidth - iconWidth * hoverScale) / 2),
+        y: Math.max(0, (btn.offsetHeight - iconHeight * hoverScale) / 2),
+    };
+}
+
 export function initTriggerButton(getSettingsFn, saveSettingsFn, renderPanelFn) {
     _getSettings = getSettingsFn;
     _saveSettings = saveSettingsFn;
@@ -30,10 +41,11 @@ export function initTriggerButton(getSettingsFn, saveSettingsFn, renderPanelFn) 
 
 function clampPosition(btn, persist = false) {
     const rect = btn.getBoundingClientRect();
-    const maxX = Math.max(0, window.innerWidth - btn.offsetWidth);
-    const maxY = Math.max(0, window.innerHeight - btn.offsetHeight);
-    const x = Math.max(0, Math.min(rect.left, maxX));
-    const y = Math.max(0, Math.min(rect.top, maxY));
+    const inset = visibleInsets(btn);
+    const maxX = window.innerWidth - btn.offsetWidth + inset.x;
+    const maxY = window.innerHeight - btn.offsetHeight + inset.y;
+    const x = Math.max(-inset.x, Math.min(rect.left, maxX));
+    const y = Math.max(-inset.y, Math.min(rect.top, maxY));
     btn.style.left = `${x}px`;
     btn.style.top = `${y}px`;
     btn.style.right = 'auto';
@@ -97,6 +109,7 @@ function enableDrag(btn) {
 
     function onPointerDown(e) {
         if (e.button !== 0) return;
+        btn.classList.add('env-trigger--dragging');
         const rect = btn.getBoundingClientRect();
         offsetX = e.clientX - rect.left;
         offsetY = e.clientY - rect.top;
@@ -105,7 +118,6 @@ function enableDrag(btn) {
         isDragging = false;
         // Synthetic events from accessibility shims may throw InvalidStateError.
         try { btn.setPointerCapture(e.pointerId); } catch { /* non-fatal */ }
-        btn.classList.add('env-trigger--dragging');
     }
 
     function onPointerMove(e) {
@@ -118,8 +130,9 @@ function enableDrag(btn) {
 
         const bw = btn.offsetWidth;
         const bh = btn.offsetHeight;
-        const newX = Math.max(0, Math.min(e.clientX - offsetX, window.innerWidth - bw));
-        const newY = Math.max(0, Math.min(e.clientY - offsetY, window.innerHeight - bh));
+        const inset = visibleInsets(btn);
+        const newX = Math.max(-inset.x, Math.min(e.clientX - offsetX, window.innerWidth - bw + inset.x));
+        const newY = Math.max(-inset.y, Math.min(e.clientY - offsetY, window.innerHeight - bh + inset.y));
 
         btn.style.left = newX + 'px';
         btn.style.top = newY + 'px';
@@ -145,12 +158,13 @@ function enableDrag(btn) {
             if (isMobile()) {
                 const rect = btn.getBoundingClientRect();
                 const centerX = rect.left + rect.width / 2;
+                const inset = visibleInsets(btn);
                 if (centerX > window.innerWidth / 2) {
                     btn.style.left = 'auto';
-                    btn.style.right = '8px';
+                    btn.style.right = `${-inset.x}px`;
                 } else {
                     btn.style.right = 'auto';
-                    btn.style.left = '8px';
+                    btn.style.left = `${-inset.x}px`;
                 }
             }
             const finalRect = btn.getBoundingClientRect();
@@ -189,8 +203,9 @@ function adjustButtonForPanel(opening) {
             btn.style.right = 'auto';
         }
     } else if (_savedX !== null) {
-        const maxX = Math.max(0, window.innerWidth - btn.offsetWidth);
-        const targetX = Math.max(0, Math.min(_savedX, maxX));
+        const inset = visibleInsets(btn);
+        const maxX = window.innerWidth - btn.offsetWidth + inset.x;
+        const targetX = Math.max(-inset.x, Math.min(_savedX, maxX));
         btn.style.left = `${targetX}px`;
         btn.style.right = 'auto';
         _savedX = null;

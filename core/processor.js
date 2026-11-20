@@ -215,6 +215,12 @@ export function reclassifyAfterMatching(result) {
     else if (isPersona) result.triggerType = 'persona';
 }
 
+export function refreshEntryMatch(entry, matchingContext) {
+    entry.triggerType = entry.baseTriggerType;
+    entry.matchedKeys = findMatchedKeys(entry, matchingContext);
+    reclassifyAfterMatching(entry);
+}
+
 // ── Timed Effects Reader ──
 
 /**
@@ -279,7 +285,7 @@ export async function processEntry(entry, matchingContext = null) {
         uid: _toNum(entry.uid, 0),
         world: _toStr(entry.world, 'Unknown', 200),
         title: _toStr(entry.comment || entry.key?.[0], 'Untitled', 200),
-        triggerType,
+        baseTriggerType: triggerType,
         // position: enum 0..7 in ST, clamped wider for unknown future values.
         position: _clampInt(entry.position, 0, 99, 0),
         depth: _clampInt(entry.depth, 0, 9999, 0),
@@ -338,7 +344,6 @@ export async function processEntry(entry, matchingContext = null) {
         } : null;
     }
 
-    result.matchedKeys = findMatchedKeys(result, matchingContext);
-    reclassifyAfterMatching(result);
+    refreshEntryMatch(result, matchingContext);
     return result;
 }

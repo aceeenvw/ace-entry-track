@@ -4,8 +4,8 @@
 import { addDiscoveredLorebook, getScannerState } from './scanner.js';
 import { log } from './utils/log.js';
 import { state, computeDiff, computeGroupMetadata, resetState } from './core/state.js';
-import { processEntry } from './core/processor.js';
-import { createMatchingContext, findMatchedKeys, resolveRecursiveMatches } from './core/matching.js';
+import { processEntry, refreshEntryMatch } from './core/processor.js';
+import { createMatchingContext, resolveRecursiveMatches } from './core/matching.js';
 import { evaluateExplanationCoverage } from './core/self-test.js';
 import { initTriggerButton, updateBadge, setButtonVisible, closePanel, clearWIHighlights } from './ui/trigger-button.js';
 import { initPanel, renderPanel, attachPanelGlobals, detachPanelGlobals } from './ui/panel.js';
@@ -109,11 +109,11 @@ function getFinalScanSummary(activeCount) {
     };
 }
 
-async function processEntryPool(entries, matchingContext) {
+async function processEntryPool(entries, matchingContext, gen) {
     const results = new Array(entries.length);
     let nextIndex = 0;
     const workers = Array.from({ length: Math.min(PROCESS_CONCURRENCY, entries.length) }, async () => {
-        while (nextIndex < entries.length) {
+        while (gen === _activationGeneration && nextIndex < entries.length) {
             const index = nextIndex++;
             try {
                 results[index] = { status: 'fulfilled', value: await processEntry(entries[index], matchingContext) };
@@ -165,18 +165,18 @@ function onWorldInfoScanDone(args) {
 
     const loopCount = Number.isFinite(args.state?.loopCount) ? Math.max(0, Math.trunc(args.state.loopCount)) : 0;
     if (!_scanAccumulator || loopCount <= _scanAccumulator.loopCount) {
-        _scanAccumulator = { loopCount: 0, candidateCount: 0, successfulCount: 0 };
+        _scanAccumulator = { loopCount: 0, candidateCount: 0, successfulCount: 0, depthAdvances: 0 };
     }
 
     _scanAccumulator.loopCount = loopCount;
+    // ST's MIN_ACTIVATIONS pass uses one additional message of global depth.
+    if (args.state?.current === 3) _scanAccumulator.depthAdvances++;
     _scanAccumulator.candidateCount += Array.isArray(args.new?.all) ? args.new.all.length : 0;
     _scanAccumulator.successfulCount += Array.isArray(args.new?.successful) ? args.new.successful.length : 0;
 
     const activeEntries = args.activated?.entries instanceof Map ? args.activated.entries : new Map();
     _latestScanSummary = {
-        loopCount: _scanAccumulator.loopCount,
-        candidateCount: _scanAccumulator.candidateCount,
-        successfulCount: _scanAccumulator.successfulCount,
+        ..._scanAccumulator,
         activeCount: activeEntries.size,
         budget: Number.isFinite(args.budget?.current) ? Math.max(0, Math.trunc(args.budget.current)) : null,
         overflowed: !!args.budget?.overflowed,
@@ -209,8 +209,8 @@ async function processActivation(entryList, gen, scanSummary) {
     const selectedEntries = Array.isArray(monitored) && monitored.length > 0
         ? boundedEntries.filter(entry => monitoredSet.has(entry?.world))
         : boundedEntries;
-    const matchingContext = createMatchingContext();
-    const results = await processEntryPool(selectedEntries, matchingContext);
+    const matchingContext = createMatchingContext(scanSummary?.depthAdvances);
+    const results = await processEntryPool(selectedEntries, matchingContext, gen);
     if (gen !== _activationGeneration) return;
 
     const processed = [];
@@ -254,12 +254,12 @@ function onChatChanged() {
 // Does NOT re-fetch from ST — only re-matches. Useful when persona,
 // character card, or AN changed between generations.
 
-async function reEvaluate() {
+function reEvaluate() {
     if (!isEnabled() || state.currentEntries.length === 0) return;
     const t0 = performance.now();
-    const matchingContext = createMatchingContext();
+    const matchingContext = createMatchingContext(state.scanSummary?.depthAdvances);
     for (const entry of state.currentEntries) {
-        entry.matchedKeys = findMatchedKeys(entry, matchingContext);
+        refreshEntryMatch(entry, matchingContext);
     }
     resolveRecursiveMatches(state.currentEntries, matchingContext);
     state.explanationCoverage = evaluateExplanationCoverage(state.currentEntries);

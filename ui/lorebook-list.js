@@ -42,22 +42,25 @@ export function populateLorebookList() {
     const settings = _getSettings?.();
     if (!settings) return;
 
-    const monitored = settings.monitoredLorebooks || [];
+    const monitored = new Set(settings.monitoredLorebooks);
     const available = _getAvailableLorebooks?.() || [];
+    const names = new Set(available.map(book => book.name));
+    const books = [...available];
+    for (const name of monitored) {
+        if (!names.has(name)) books.push({ name, source: 'detached' });
+    }
 
     container.empty();
 
-    if (available.length === 0) {
-        container.empty().append($('<div>', { class: 'env-lorebook-empty', text: t('books.empty') }));
+    if (books.length === 0) {
+        container.append($('<div>', { class: 'env-lorebook-empty', text: t('books.empty') }));
         return;
     }
 
-    for (let i = 0; i < available.length; i++) {
-        const book = available[i];
-        const name = typeof book === 'string' ? book : book.name;
+    for (let i = 0; i < books.length; i++) {
+        const { name, source } = books[i];
         if (typeof name !== 'string' || !name) continue;
-        const source = typeof book === 'string' ? 'auto' : (book.source || 'auto');
-        const isChecked = monitored.includes(name);
+        const isChecked = monitored.has(name);
         // Index suffix disambiguates names that collapse to the same slug
         // (e.g. "hello world" vs "hello_world").
         const safeId = `env_lb_${i}_${name.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80)}`;
@@ -66,7 +69,7 @@ export function populateLorebookList() {
         const input = $('<input>', { type: 'checkbox', id: safeId }).val(name);
         if (isChecked) input.prop('checked', true);
 
-        const badgeLabel = SOURCE_LABELS[source] || source.toUpperCase();
+        const badgeLabel = SOURCE_LABELS[source] || t('books.detached');
         const badgeColor = SOURCE_COLORS[source] || '#64748b';
         const badge = $('<span>', { class: 'env-lorebook-source' })
             .text(badgeLabel)

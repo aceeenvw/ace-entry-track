@@ -25,22 +25,16 @@ export function getWIGlobalSettings() {
         includeNames: true,
         caseSensitive: false,
         matchWholeWords: false,
-        minActivations: 0,
-        minActivationsDepthMax: 0,
     };
 
     try {
-        const readNum = (id) => {
-            const el = document.getElementById(id);
-            return el ? Number(el.value) || 0 : 0;
-        };
         const readCheck = (id) => {
             const el = document.getElementById(id);
             return el ? !!el.checked : undefined;
         };
 
-        const depth = readNum('world_info_depth');
-        if (depth > 0) settings.scanDepth = depth;
+        const depth = document.getElementById('world_info_depth')?.valueAsNumber;
+        if (Number.isFinite(depth) && depth >= 0) settings.scanDepth = depth;
 
         const incNames = readCheck('world_info_include_names');
         if (incNames !== undefined) settings.includeNames = incNames;
@@ -51,8 +45,6 @@ export function getWIGlobalSettings() {
         const mww = readCheck('world_info_match_whole_words');
         if (mww !== undefined) settings.matchWholeWords = mww;
 
-        settings.minActivations = readNum('world_info_min_activations');
-        settings.minActivationsDepthMax = readNum('world_info_min_activations_depth_max');
     } catch (e) {
         log.warn('Could not read WI global settings from DOM:', e);
     }
@@ -80,12 +72,17 @@ export function getVectorSettings() {
 }
 
 /** Build immutable shared inputs and bounded per-generation caches. */
-export function createMatchingContext() {
+export function createMatchingContext(depthAdvances = 0) {
     const ctx = SillyTavern.getContext();
     const charId = ctx.characterId;
     const char = charId !== undefined ? ctx.characters?.[charId] : null;
     const charData = char?.data ?? null;
     const wiSettings = getWIGlobalSettings();
+    wiSettings.scanDepth = Math.min(1000, wiSettings.scanDepth + depthAdvances);
+    const chat = [];
+    for (let i = (ctx.chat?.length ?? 0) - 1; i >= 0 && chat.length < 1000; i--) {
+        if (!ctx.chat[i].is_system) chat.push(ctx.chat[i]);
+    }
     const staticSources = [];
 
     _pushSource(staticSources, 'description', charData?.description, 'description');
@@ -105,7 +102,7 @@ export function createMatchingContext() {
         wiSettings,
         vectorSettings: getVectorSettings(),
         substituteParams: typeof ctx.substituteParams === 'function' ? ctx.substituteParams : null,
-        chat: (ctx.chat || []).filter(m => !m.is_system),
+        chat,
         staticSources,
         chatSourceCache: new Map(),
         macroCache: new Map(),
@@ -305,34 +302,25 @@ function formatChatBuffer(messages, includeNames) {
         const raw = typeof m.mes === 'string' ? m.mes : '';
         const msg = raw.indexOf(MATCHER) >= 0 ? raw.split(MATCHER).join('') : raw;
         const name = typeof m.name === 'string' ? m.name : '';
-        if (includeNames && name) return `${name}: ${msg}`;
-        return msg;
+        return (includeNames && name ? `${name}: ${msg}` : msg).trim();
     }).join(JOINER);
 }
 
-/** Build the source list this entry would scan (per its own flags). */
+function getChatSource(shared, depth) {
+    depth = Math.min(shared.chat.length, depth);
+    if (!depth) return '';
+    if (shared.chatSourceCache.has(depth)) return shared.chatSourceCache.get(depth);
+    const text = _asSourceText(formatChatBuffer(shared.chat.slice(0, depth), shared.wiSettings.includeNames));
+    setBoundedCache(shared.chatSourceCache, depth, text, 32);
+    return text;
+}
+
 export function buildSourcesForEntry(entry, matchingContext = null) {
     const shared = matchingContext || createMatchingContext();
-    const wiSettings = shared.wiSettings;
-
+    const depth = entry.scanDepth ?? shared.wiSettings.scanDepth;
+    if (depth <= 0) return [];
     const sources = [];
-
-    // When min_activations is active, ST scans deeper to find enough
-    // entries — mirror that wider range so we can reproduce matches.
-    let depth = entry.scanDepth;
-    if (depth === null || depth === undefined) depth = wiSettings.scanDepth || 2;
-    if (wiSettings.minActivations > 0 && wiSettings.minActivationsDepthMax > 0) {
-        depth = Math.max(depth, wiSettings.minActivationsDepthMax);
-    }
-
-    const cacheKey = `${depth}:${wiSettings.includeNames ? 1 : 0}`;
-    let chatText = shared.chatSourceCache.get(cacheKey);
-    if (chatText === undefined) {
-        const recent = depth > 0 ? shared.chat.slice(-depth) : [];
-        chatText = formatChatBuffer(recent, wiSettings.includeNames);
-        setBoundedCache(shared.chatSourceCache, cacheKey, chatText, 32);
-    }
-
+    const chatText = getChatSource(shared, depth);
     if (chatText) _pushSource(sources, 'chat', chatText);
     for (const source of shared.staticSources) {
         const enabled = source.type === 'description' ? entry.matchCharacterDescription
@@ -357,13 +345,7 @@ export function buildAllSources(matchingContext = null) {
     if (shared.allSources) return shared.allSources;
 
     const sources = [];
-    const depth = shared.wiSettings.scanDepth;
-    const cacheKey = `${depth}:${shared.wiSettings.includeNames ? 1 : 0}`;
-    let chatText = shared.chatSourceCache.get(cacheKey);
-    if (chatText === undefined) {
-        chatText = depth > 0 ? formatChatBuffer(shared.chat.slice(-depth), shared.wiSettings.includeNames) : '';
-        setBoundedCache(shared.chatSourceCache, cacheKey, chatText, 32);
-    }
+    const chatText = getChatSource(shared, shared.wiSettings.scanDepth);
     if (chatText) _pushSource(sources, 'chat', chatText);
     sources.push(...shared.staticSources);
     shared.allSources = sources;

@@ -86,7 +86,7 @@ function onViewportChanged() {
     _viewportFrame = requestAnimationFrame(() => {
         _viewportFrame = null;
         const btn = document.getElementById('env_trigger_btn');
-        if (!btn) return;
+        if (!btn || !btn.getClientRects().length) return;
         const mobile = isMobile();
         if (_mobileMode !== mobile) {
             _mobileMode = mobile;
@@ -317,5 +317,11 @@ export function updateBadge() {
 
 export function setButtonVisible(visible) {
     const btn = document.getElementById('env_trigger_btn');
-    if (btn) btn.style.display = visible ? '' : 'none';
+    if (!btn) return;
+    const wasHidden = btn.style.display === 'none';
+    btn.style.display = visible ? '' : 'none';
+    if (visible && wasHidden) {
+        _mobileMode = isMobile();
+        applySavedPosition(btn);
+    }
 }

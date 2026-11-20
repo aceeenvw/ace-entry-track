@@ -11,6 +11,7 @@
 
                 <div class="env_settings_section">
                     <h4 class="env_settings_heading" data-env-i18n="settings.behavior">Behavior</h4>
+                    <div class="env-setting-group">
 
                     <label class="env_set_row env_set_toggle" for="env_enabled">
                         <span class="env_set_text">
@@ -30,10 +31,12 @@
                             <option value="compact" data-env-i18n="settings.compact">Compact</option>
                         </select>
                     </label>
+                    </div>
                 </div>
 
                 <div class="env_settings_section">
-                    <h4 class="env_settings_heading" data-env-i18n="settings.regex">Check Regex</h4>
+                    <h4 class="env_settings_heading" data-env-i18n="settings.regexGroup">Regex tools</h4>
+                    <div class="env-setting-group">
 
                     <div class="env_set_block env_regex_launcher">
                         <span class="env_set_text">
@@ -45,10 +48,6 @@
                             <span data-env-i18n="settings.regexOpen">Open checker</span>
                         </button>
                     </div>
-                </div>
-
-                <div class="env_settings_section">
-                    <h4 class="env_settings_heading" data-env-i18n="settings.constructor">Construct Regex</h4>
 
                     <div class="env_set_block env_regex_launcher">
                         <span class="env_set_text">
@@ -60,10 +59,23 @@
                             <span data-env-i18n="settings.constructorOpen">Open constructor</span>
                         </button>
                     </div>
+                    </div>
                 </div>
 
                 <div class="env_settings_section">
                     <h4 class="env_settings_heading" data-env-i18n="settings.tracking">Tracking</h4>
+                    <div class="env-setting-group">
+                    <details id="env-entry-tools" class="env_set_block">
+                        <summary><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span class="env_set_label" data-env-i18n="lab.title">Lorebook scratchpad</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+                        <div class="env-lab-fields">
+                            <label><span data-env-i18n="lab.book">Lorebook</span><select id="env-lab-book" class="text_pole"></select></label>
+                            <small id="env-lab-note" role="status"></small>
+                            <label><span data-env-i18n="lab.text">Scratchpad dialogue</span><textarea id="env-lab-text" class="text_pole" rows="3" maxlength="4096"></textarea></label>
+                            <button id="env-lab-test" type="button" class="menu_button env_regex_launcher__button" disabled><i class="fa-solid fa-flask" aria-hidden="true"></i> <span data-env-i18n="lab.test">Test lorebook</span></button>
+                            <output id="env-lab-result" role="status"></output>
+                            <div class="env-lab-pages" hidden><button id="env-lab-prev" class="menu_button" type="button" data-env-i18n="lab.prev">Previous</button><button id="env-lab-next" class="menu_button" type="button" data-env-i18n="lab.next">Next</button></div>
+                        </div>
+                    </details>
 
                     <div class="env_set_block">
                         <span class="env_set_text">
@@ -71,6 +83,7 @@
                             <span class="env_set_desc" data-env-i18n="settings.booksDesc">Check which lorebooks to track (empty = track all).</span>
                         </span>
                         <div id="env_monitored_lorebooks" class="env-lorebook-list"></div>
+                    </div>
                     </div>
                 </div>
             </div>

@@ -7,6 +7,7 @@ import { initScanner, getScannerState, setScannerEnabled } from './scanner.js';
 import { initTracker, refreshTrackerUI, setEnabled as setTrackerEnabled } from './tracker.js';
 import { initLorebookList, populateLorebookList } from './ui/lorebook-list.js';
 import { initRegexChecker } from './ui/regex-checker.js';
+import { initEntryTools } from './ui/entry-tools.js';
 import { initRegexConstructor } from './ui/regex-constructor.js';
 import { applyPanelLayout } from './ui/panel.js';
 import { log } from './utils/log.js';
@@ -131,6 +132,9 @@ function bindSettingsEvents() {
         });
         settings.monitoredLorebooks = checked;
         saveSettings();
+        if (!this.checked && !getScannerState().availableLorebooks.some(book => book.name === this.value)) {
+            populateLorebookList();
+        }
     });
 }
 
@@ -152,10 +156,7 @@ jQuery(async () => {
 
     loadSettingsUI();
     bindSettingsEvents();
-    initRegexChecker();
-    initRegexConstructor();
-
-    initScanner(getSettings, saveSettings);
+    initScanner(getSettings);
     initTracker(getSettings, saveSettings);
     setTrackerEnabled(settings.enabled);
 
@@ -164,5 +165,9 @@ jQuery(async () => {
         loadSettingsUI();
         refreshTrackerUI();
     });
+
+    initRegexChecker();
+    initRegexConstructor();
+    initEntryTools();
 
 });

@@ -6,7 +6,6 @@
 import { populateLorebookList } from './ui/lorebook-list.js';
 
 let _getSettings;
-let _saveSettingsDebounced;
 
 // Generation counter: stale async results from a prior discovery are discarded.
 let _discoveryGeneration = 0;
@@ -26,9 +25,8 @@ const state = {
     availableLorebooks: [],
 };
 
-export function initScanner(getSettingsFn, saveFn) {
+export function initScanner(getSettingsFn) {
     _getSettings = getSettingsFn;
-    _saveSettingsDebounced = saveFn;
 
     if (isEnabled()) void refreshScanner();
 
@@ -54,14 +52,6 @@ export function initScanner(getSettingsFn, saveFn) {
 
 }
 
-export async function refreshScanner() {
-    if (!isEnabled()) return;
-    await discoverLorebooks();
-    if (!isEnabled()) return;
-    pruneStaleMonitored();
-    populateLorebookList();
-}
-
 export function setScannerEnabled(enabled) {
     _discoveryGeneration++;
     if (enabled) void refreshScanner();
@@ -75,20 +65,6 @@ function onChatChanged() {
 function onLorebookSettingsChanged() {
     if (!isEnabled()) return;
     void refreshScanner();
-}
-
-/** Drop monitored selections whose lorebook is no longer attached. */
-function pruneStaleMonitored() {
-    const settings = _getSettings?.();
-    if (!settings?.monitoredLorebooks?.length) return;
-
-    const availableNames = new Set(state.availableLorebooks.map(b => b.name));
-    const before = settings.monitoredLorebooks.length;
-    settings.monitoredLorebooks = settings.monitoredLorebooks.filter(name => availableNames.has(name));
-
-    if (settings.monitoredLorebooks.length < before) {
-        _saveSettingsDebounced?.();
-    }
 }
 
 // ── Helpers ──
@@ -108,7 +84,7 @@ function addBook(found, name, source) {
 // ── Discovery ──
 
 /** Discover lorebooks from all five sources. Race-protected via _discoveryGeneration. */
-async function discoverLorebooks() {
+async function refreshScanner() {
     const gen = ++_discoveryGeneration;
     const ctx = SillyTavern.getContext();
     const found = new Map();
@@ -152,7 +128,7 @@ async function discoverLorebooks() {
     state.availableLorebooks = [...found.entries()]
         .map(([name, source]) => ({ name, source }))
         .sort((a, b) => a.name.localeCompare(b.name));
-
+    populateLorebookList();
 }
 
 /** Read global WI selection from #world_info <select> (option text = name). */

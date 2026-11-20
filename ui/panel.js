@@ -213,7 +213,7 @@ function createPanel() {
             if (!entryEl.querySelector('.env-detail')) {
                 const entryData = state.currentEntries.find(en => entryKey(en) === key);
                 if (entryData) {
-                    ensurePotentialMatches(entryData, createMatchingContext());
+                    ensurePotentialMatches(entryData, createMatchingContext(state.scanSummary?.depthAdvances));
                     entryEl.insertAdjacentHTML('beforeend', renderEntryDetail(entryData));
                 }
             }
@@ -485,7 +485,7 @@ function buildContextPreview(entries, matchingContext = createMatchingContext())
     }
 
     const wiSettings = matchingContext.wiSettings;
-    const scanDepth = wiSettings.scanDepth || 10;
+    const scanDepth = wiSettings.scanDepth;
 
     let html = entries.length > previewEntries.length
         ? `<div class="env-ctx__limit">${t('context.limit', { count: previewEntries.length })}</div>`
@@ -517,9 +517,7 @@ function buildContextPreview(entries, matchingContext = createMatchingContext())
             highlightBudget.sourceRemaining = 300;
             html += `<div class="env-ctx__source-body">`;
             if (src.label === 'chat') {
-                const ctx = SillyTavern.getContext();
-                const chat = ctx.chat || [];
-                const recent = chat.slice(-scanDepth);
+                const recent = matchingContext.chat.slice(0, scanDepth).reverse();
                 if (recent.length === 0) {
                     html += `<span class="env-ctx__empty">${t('context.noChat')}</span>`;
                 } else {
@@ -714,7 +712,7 @@ export function renderPanel() {
     let renderMatchingContext = null;
     const expandedEntries = entries.filter(entry => state.expandedUids.has(entryKey(entry)));
     if (expandedEntries.length > 0) {
-        renderMatchingContext = createMatchingContext();
+        renderMatchingContext = createMatchingContext(state.scanSummary?.depthAdvances);
         for (const entry of expandedEntries) ensurePotentialMatches(entry, renderMatchingContext);
     }
 
@@ -784,7 +782,7 @@ export function renderPanel() {
     html += `<div class="env-context">`;
     html += `<button type="button" class="env-context-toggle" aria-expanded="${ctxOpen}"><span class="env-context-toggle__icon">${ICONS.context}</span><span>${t('context.title')}</span><span class="env-context-toggle__arrow">${ctxOpen ? ICONS.chevron_up : ICONS.chevron_down}</span></button>`;
     if (ctxOpen) {
-        renderMatchingContext ||= createMatchingContext();
+        renderMatchingContext ||= createMatchingContext(state.scanSummary?.depthAdvances);
         html += `<div class="env-ctx__body">${buildContextPreview(entries, renderMatchingContext)}</div>`;
     }
     html += `</div>`;
